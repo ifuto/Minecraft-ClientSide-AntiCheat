@@ -19,3 +19,17 @@ banCommand: "ban %player% %reason%"
 
 # Kick on heartbeat timeout?
 kickOnHeartbeatTimeout: true
+
+# Enable Discord webhook for alerts (leave empty to disable)
+discordWebhookUrl: ""
+
+# Enable challenge-response attestation (server sends random challenge, client responds)
+enableChallenge: false
+
+# Enable HWID ban (requires client to send HWID)
+enableHwidBan: false
+
+# Violation scoring thresholds (see ViolationScore.java)
+banThreshold: 100
+warnThreshold: 50
+scoreHalfLifeMs: 120000

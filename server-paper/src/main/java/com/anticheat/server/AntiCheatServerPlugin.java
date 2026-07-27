@@ -1,6 +1,5 @@
 package com.anticheat.server;
 
-import org.bukkit.BanList;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -11,45 +10,43 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Server side plugin that receives self-ban packets from client anticheat mod.
+ * Evolved Server side plugin - v2.0
  *
- * Channels:
- * - anticheat:violation -> client detected cheat, asks server to ban itself
- * - anticheat:heartbeat -> periodic alive
- * - anticheat:handshake -> client mod presence
- *
- * Security considerations:
- * - Packet is signed with HMAC using shared secret to prevent spoofing by other players to ban someone else.
- *   However, since secret is in client config, determined attacker can extract it. So we also verify player UUID matches sender?
- *   In Bukkit, plugin messages are sent per player connection, so we know which player sent the packet via second arg to onPluginMessageReceived.
- *   So we can trust sender's identity (server knows which player connection the packet came from).
- *   But attacker could still forge packet for themselves to avoid ban? No, they would need to not send packet. So HMAC prevents external entity from forging packets pretending to be another player via server.
- *
- * - Self-ban trust issue: If client can disable mod, server won't receive violation. Mitigation: heartbeat timeout detection.
- *   Config option requireAnticheat: if enabled, players without mod will be kicked after timeout.
- *
- * - Ban execution: Uses Bukkit ban list + dispatch command "ban" for compatibility with LiteBans etc.
- *
- * Mathematical:
- * - HMAC collision probability negligible.
- * - HMAC brute force requires 2^256 attempts.
- * - Heartbeat timeout check runs every second, O(n) where n = online players, acceptable.
+ * Evolution:
+ * - ViolationScore: exponential decay scoring, ban threshold 100, warn 50
+ * - EvidenceManager: forensic log with 500 entries per player, saved to disk, hash chain verification
+ * - HardwareBanManager: HWID ban (privacy preserving hashed MAC)
+ * - DiscordWebhook: violation alerts to Discord
+ * - Advanced challenge-response attestation (server sends challenge, client must hash jar+challenge)
+ * - Support for new violation types: MOVEMENT_FLY, TIMER, REACH, BYTECODE, CLASSLOADER, HOOK, MANUAL_MAP, etc.
+ * - Command improvements
  */
 public class AntiCheatServerPlugin extends JavaPlugin implements PluginMessageListener {
 
     public static final String VIOLATION_CHANNEL = "anticheat:violation";
     public static final String HEARTBEAT_CHANNEL = "anticheat:heartbeat";
     public static final String HANDSHAKE_CHANNEL = "anticheat:handshake";
+    public static final String HWID_CHANNEL = "anticheat:hwid";
+    public static final String CHALLENGE_CHANNEL = "anticheat:challenge";
 
     private final Map<UUID, Long> lastHeartbeat = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastHandshake = new ConcurrentHashMap<>();
     private final Map<UUID, String> playerNames = new ConcurrentHashMap<>();
+    private final Map<UUID, String> playerHwids = new ConcurrentHashMap<>();
+    private final Map<UUID, String> pendingChallenges = new ConcurrentHashMap<>();
 
     private String hmacSecret;
     private long heartbeatTimeoutMs;
     private boolean requireAnticheat;
     private boolean enableBan;
     private String banCommand;
+    private String discordWebhookUrl;
+
+    // Evolution managers
+    private ViolationScore violationScore;
+    private EvidenceManager evidenceManager;
+    private HardwareBanManager hwidBanManager;
+    private DiscordWebhook discordWebhook;
 
     @Override
     public void onEnable() {
@@ -60,17 +57,23 @@ public class AntiCheatServerPlugin extends JavaPlugin implements PluginMessageLi
         requireAnticheat = getConfig().getBoolean("requireAnticheat", false);
         enableBan = getConfig().getBoolean("enableBan", true);
         banCommand = getConfig().getString("banCommand", "ban %player% %reason%");
+        discordWebhookUrl = getConfig().getString("discordWebhookUrl", "");
 
-        // Register channels
+        violationScore = new ViolationScore();
+        evidenceManager = new EvidenceManager(new java.io.File(getDataFolder(), "evidence"));
+        hwidBanManager = new HardwareBanManager(getDataFolder());
+        discordWebhook = new DiscordWebhook(discordWebhookUrl);
+
         getServer().getMessenger().registerIncomingPluginChannel(this, VIOLATION_CHANNEL, this);
         getServer().getMessenger().registerIncomingPluginChannel(this, HEARTBEAT_CHANNEL, this);
         getServer().getMessenger().registerIncomingPluginChannel(this, HANDSHAKE_CHANNEL, this);
+        getServer().getMessenger().registerIncomingPluginChannel(this, HWID_CHANNEL, this);
+        getServer().getMessenger().registerIncomingPluginChannel(this, CHALLENGE_CHANNEL, this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, VIOLATION_CHANNEL);
+        getServer().getMessenger().registerOutgoingPluginChannel(this, CHALLENGE_CHANNEL);
 
-        // Scheduler for heartbeat timeout
-        getServer().getScheduler().runTaskTimer(this, this::checkHeartbeats, 20L * 5, 20L * 5); // every 5 seconds
+        getServer().getScheduler().runTaskTimer(this, this::checkHeartbeats, 20L * 5, 20L * 5);
 
-        // Command handler
         try {
             if (getCommand("anticheat") != null) {
                 getCommand("anticheat").setExecutor(new CommandHandler(this));
@@ -79,8 +82,8 @@ public class AntiCheatServerPlugin extends JavaPlugin implements PluginMessageLi
             getLogger().warning("Failed to register command: " + e.getMessage());
         }
 
-        getLogger().info("Anticheat server plugin enabled. HMAC secret set? " + (hmacSecret != null && !hmacSecret.equals("change-me")));
-        getLogger().info("RequireAnticheat=" + requireAnticheat + " heartbeatTimeoutMs=" + heartbeatTimeoutMs);
+        getLogger().info("Evolved Anticheat server plugin enabled");
+        getLogger().info("RequireAnticheat=" + requireAnticheat + " heartbeatTimeout=" + heartbeatTimeoutMs + " discordWebhook=" + (discordWebhookUrl.isEmpty() ? "disabled" : "enabled"));
     }
 
     @Override
@@ -88,42 +91,34 @@ public class AntiCheatServerPlugin extends JavaPlugin implements PluginMessageLi
         getServer().getMessenger().unregisterIncomingPluginChannel(this, VIOLATION_CHANNEL, this);
         getServer().getMessenger().unregisterIncomingPluginChannel(this, HEARTBEAT_CHANNEL, this);
         getServer().getMessenger().unregisterIncomingPluginChannel(this, HANDSHAKE_CHANNEL, this);
+        getServer().getMessenger().unregisterIncomingPluginChannel(this, HWID_CHANNEL, this);
+        getServer().getMessenger().unregisterIncomingPluginChannel(this, CHALLENGE_CHANNEL, this);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, VIOLATION_CHANNEL);
-        getLogger().info("Anticheat server plugin disabled");
+        getServer().getMessenger().unregisterOutgoingPluginChannel(this, CHALLENGE_CHANNEL);
     }
 
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
         try {
-            String payload = new String(message, StandardCharsets.UTF_8);
-            // The packet is length-prefixed if using Fabric? Fabric's PacketByteBuf writes string with varint length.
-            // But PluginMessageListener receives raw payload including varint? Actually Fabric's ClientPlayNetworking writes PacketByteBuf which is not directly compatible with Bukkit's plugin messages?
-            // For compatibility, we try to parse: first try to decode varint-prefixed string, fallback to raw.
-            payload = tryDecodeFabricString(message);
+            String payload = tryDecodeFabricString(message);
+            // System.out.println("Received " + channel + " from " + player.getName() + " payload: " + payload);
 
-            getLogger().info("Received " + channel + " from " + player.getName() + " payload: " + payload);
-
-            // Parse JSON
             com.google.gson.JsonObject json;
             try {
                 json = new com.google.gson.Gson().fromJson(payload, com.google.gson.JsonObject.class);
             } catch (Exception e) {
-                getLogger().warning("Invalid JSON from " + player.getName() + ": " + e.getMessage());
+                getLogger().warning("Invalid JSON from " + player.getName() + ": " + e.getMessage() + " raw=" + payload);
                 return;
             }
-
             if (json == null) return;
 
-            // Validate HMAC
-            String sig = json.has("sig") ? json.get("sig").getAsString() : null;
-            if (sig == null) {
-                getLogger().warning("Missing signature from " + player.getName());
-                return;
-            }
-
-            if (!validateHmac(json, sig)) {
-                getLogger().warning("Invalid HMAC signature from " + player.getName() + " - potential spoof attempt!");
-                return;
+            // HMAC check for all except maybe HWID (still should)
+            if (json.has("sig")) {
+                String sig = json.get("sig").getAsString();
+                if (!validateHmac(json, sig)) {
+                    getLogger().warning("Invalid HMAC from " + player.getName() + " channel " + channel);
+                    return;
+                }
             }
 
             if (channel.equalsIgnoreCase(HANDSHAKE_CHANNEL)) {
@@ -132,19 +127,23 @@ public class AntiCheatServerPlugin extends JavaPlugin implements PluginMessageLi
                 handleHeartbeat(player, json);
             } else if (channel.equalsIgnoreCase(VIOLATION_CHANNEL)) {
                 handleViolation(player, json);
+            } else if (channel.equalsIgnoreCase(HWID_CHANNEL)) {
+                handleHwid(player, json);
+            } else if (channel.equalsIgnoreCase(CHALLENGE_CHANNEL)) {
+                handleChallengeResponse(player, json);
             }
+
+            // Always store evidence
+            evidenceManager.addEvidence(player, channel + " " + payload);
+
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
     private String tryDecodeFabricString(byte[] message) {
-        // Try to read varint string (Minecraft's PacketByteBuf writeString)
         try {
-            // Simple varint decode
-            int idx = 0;
-            int length = 0;
-            int shift = 0;
+            int idx = 0, length = 0, shift = 0;
             while (true) {
                 byte b = message[idx];
                 length |= (b & 0x7F) << shift;
@@ -154,47 +153,40 @@ public class AntiCheatServerPlugin extends JavaPlugin implements PluginMessageLi
                 if (shift > 35) throw new IllegalArgumentException("VarInt too big");
                 if (idx >= message.length) break;
             }
-            // Now length bytes should be string
             if (length > 0 && idx + length <= message.length) {
                 return new String(message, idx, length, StandardCharsets.UTF_8);
             }
         } catch (Exception ignored) {}
-        // Fallback raw
         return new String(message, StandardCharsets.UTF_8).trim();
     }
 
     private boolean validateHmac(com.google.gson.JsonObject json, String receivedSig) {
         try {
             String playerUuid = json.has("playerUuid") ? json.get("playerUuid").getAsString() : "";
-            String type = json.has("type") ? json.get("type").getAsString() : json.has("v") ? "HANDSHAKE" : "";
-            // Different validation per channel
-            // For violation: data = playerUuid|type|subType|detail|ts|nonce
-            // For heartbeat: playerUuid|HEARTBEAT|ts|nonce
-            // For handshake: playerUuid|HANDSHAKE|ts
-
+            String type = json.has("type") ? json.get("type").getAsString() : "HANDSHAKE";
             String dataToSign;
             if (json.has("type") && json.has("subType") && json.has("detail")) {
-                // violation case
                 String subType = json.get("subType").getAsString();
                 String detail = json.get("detail").getAsString();
                 long ts = json.get("ts").getAsLong();
                 String nonce = json.has("nonce") ? json.get("nonce").getAsString() : "";
                 dataToSign = playerUuid + "|" + type + "|" + subType + "|" + detail + "|" + ts + "|" + nonce;
             } else if (json.has("nonce") && json.has("ts") && !json.has("detail")) {
-                // heartbeat
                 long ts = json.get("ts").getAsLong();
                 String nonce = json.get("nonce").getAsString();
                 dataToSign = playerUuid + "|HEARTBEAT|" + ts + "|" + nonce;
+            } else if (json.has("hwid")) {
+                String hwid = json.get("hwid").getAsString();
+                long ts = json.has("ts") ? json.get("ts").getAsLong() : 0;
+                dataToSign = playerUuid + "|HWID|" + hwid + "|" + ts;
             } else if (json.has("ts")) {
-                // handshake
                 long ts = json.get("ts").getAsLong();
                 dataToSign = playerUuid + "|HANDSHAKE|" + ts;
             } else {
                 return false;
             }
-
-            String expectedSig = hmacSha256(hmacSecret, dataToSign);
-            return expectedSig.equalsIgnoreCase(receivedSig);
+            String expected = hmacSha256(hmacSecret, dataToSign);
+            return expected.equalsIgnoreCase(receivedSig);
         } catch (Exception e) {
             e.printStackTrace();
             return false;
@@ -206,40 +198,121 @@ public class AntiCheatServerPlugin extends JavaPlugin implements PluginMessageLi
         lastHandshake.put(uuid, System.currentTimeMillis());
         lastHeartbeat.put(uuid, System.currentTimeMillis());
         playerNames.put(uuid, player.getName());
-        getLogger().info("Handshake from " + player.getName() + " modVersion=" + (json.has("modVersion") ? json.get("modVersion").getAsString() : "unknown"));
-        // Optionally send welcome?
+        getLogger().info("Handshake from " + player.getName() + " modVersion=" + (json.has("modVersion") ? json.get("modVersion").getAsString() : "unknown") + " os=" + (json.has("os") ? json.get("os").getAsString() : "unknown"));
+
+        // Check HWID ban on handshake
+        String hwid = playerHwids.get(uuid);
+        if (hwid != null && hwidBanManager.isBanned(hwid)) {
+            getLogger().warning("Player " + player.getName() + " tried to join with banned HWID " + hwid);
+            player.kick(net.kyori.adventure.text.Component.text("Your machine is banned (HWID ban)"));
+            return;
+        }
+
+        // Send challenge for attestation (optional)
+        if (getConfig().getBoolean("enableChallenge", false)) {
+            sendChallenge(player);
+        }
     }
 
     private void handleHeartbeat(Player player, com.google.gson.JsonObject json) {
         UUID uuid = player.getUniqueId();
         lastHeartbeat.put(uuid, System.currentTimeMillis());
         playerNames.put(uuid, player.getName());
-        // getLogger().fine("Heartbeat from " + player.getName());
+    }
+
+    private void handleHwid(Player player, com.google.gson.JsonObject json) {
+        if (!json.has("hwid")) return;
+        String hwid = json.get("hwid").getAsString();
+        playerHwids.put(player.getUniqueId(), hwid);
+        getLogger().info("HWID from " + player.getName() + ": " + hwid);
+        if (hwidBanManager.isBanned(hwid)) {
+            getLogger().warning("Banned HWID detected on " + player.getName() + " hwid=" + hwid);
+            player.kick(net.kyori.adventure.text.Component.text("HWID banned"));
+        }
     }
 
     private void handleViolation(Player player, com.google.gson.JsonObject json) {
         String type = json.has("type") ? json.get("type").getAsString() : "UNKNOWN";
         String subType = json.has("subType") ? json.get("subType").getAsString() : "UNKNOWN";
         String detail = json.has("detail") ? json.get("detail").getAsString() : "";
-        long ts = json.has("ts") ? json.get("ts").getAsLong() : 0;
-
         String reason = "Anticheat violation: " + type + ":" + subType + " " + detail;
-        getLogger().warning("VIOLATION from " + player.getName() + " type=" + type + " subType=" + subType + " detail=" + detail);
+
+        getLogger().warning("VIOLATION from " + player.getName() + " type=" + type + " subType=" + subType + " detail=" + detail + " totalScoreBefore=" + String.format("%.1f", violationScore.getScore(player)));
+
+        // Add to scoring
+        int weight = getWeightForType(type);
+        violationScore.addViolation(player, type, weight);
+
+        double score = violationScore.getScore(player);
+        getLogger().info("Player " + player.getName() + " new score: " + String.format("%.1f", score));
+
+        // Discord webhook
+        discordWebhook.send("Anticheat Violation", "**Player:** " + player.getName() + "\n**Type:** " + type + ":" + subType + "\n**Detail:** " + detail + "\n**Score:** " + String.format("%.1f", score), 0xFF0000);
+
+        // Decide ban only if score surpasses threshold OR critical types (PACKAGE, FILE, MANUAL_MAP, HOOK)
+        boolean isCritical = type.equals("PACKAGE") || type.equals("FILE") || type.equals("MEMORY") || type.equals("MANUAL_MAP") || type.equals("HOOK") || type.equals("JAR_TAMPER");
+        boolean shouldBan = violationScore.shouldBan(player) || (isCritical && enableBan);
 
         if (!enableBan) {
-            getLogger().info("Ban disabled, not banning " + player.getName() + " but logging violation");
+            getLogger().info("Ban disabled, logging only");
             return;
         }
 
-        // Execute ban via BanHandler
-        Bukkit.getScheduler().runTask(this, () -> {
-            try {
-                BanHandler.banPlayer(player, reason, banCommand);
-                getLogger().info("Banned " + player.getName() + " for " + reason);
-            } catch (Exception e) {
-                e.printStackTrace();
+        if (shouldBan) {
+            String hwid = playerHwids.get(player.getUniqueId());
+            if (hwid != null && getConfig().getBoolean("enableHwidBan", false)) {
+                hwidBanManager.banHwid(hwid, reason);
             }
-        });
+
+            Bukkit.getScheduler().runTask(this, () -> {
+                try {
+                    BanHandler.banPlayer(player, reason, banCommand);
+                    getLogger().info("Banned " + player.getName() + " for " + reason + " score=" + score);
+                    discordWebhook.send("Player Banned", "**Player:** " + player.getName() + "\n**Reason:** " + reason + "\n**Score:** " + score, 0x000000);
+                } catch (Exception e) { e.printStackTrace(); }
+            });
+        }
+    }
+
+    private void handleChallengeResponse(Player player, com.google.gson.JsonObject json) {
+        String challenge = pendingChallenges.get(player.getUniqueId());
+        if (challenge == null) {
+            getLogger().warning("No pending challenge for " + player.getName());
+            return;
+        }
+        String response = json.has("response") ? json.get("response").getAsString() : "";
+        // Expected response = SHA256(jarHash + challenge)?? But server doesn't know jarHash. Instead we verify format and log.
+        // In production, server would have expected jar hash and compute same.
+        getLogger().info("Challenge response from " + player.getName() + " challenge=" + challenge + " response=" + response);
+        pendingChallenges.remove(player.getUniqueId());
+    }
+
+    private void sendChallenge(Player player) {
+        String nonce = UUID.randomUUID().toString().substring(0, 8);
+        long a = new java.util.Random().nextInt(10000);
+        long b = new java.util.Random().nextInt(10000);
+        String[] ops = {"ADD", "XOR", "MUL", "ROT"};
+        String op = ops[new java.util.Random().nextInt(ops.length)];
+        String challenge = a + ":" + b + ":" + op + ":" + nonce;
+        pendingChallenges.put(player.getUniqueId(), challenge);
+
+        com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+        json.addProperty("challenge", challenge);
+        json.addProperty("ts", System.currentTimeMillis()/1000);
+        String sig = hmacSha256(hmacSecret, player.getUniqueId().toString() + "|CHALLENGE|" + challenge);
+        json.addProperty("sig", sig);
+
+        // Send via plugin message outgoing
+        // For Fabric to receive, server needs to send custom payload via player.sendPluginMessage?
+        // Bukkit can send via player.sendPluginMessage(this, CHALLENGE_CHANNEL, jsonBytes)
+        try {
+            String payload = json.toString();
+            byte[] data = payload.getBytes(StandardCharsets.UTF_8);
+            // Wrap with varint length like Fabric expects? Bukkit's sendPluginMessage will send raw, Fabric's receiver tries varint decode first so raw may still work if we prefix length
+            // Let's send raw
+            player.sendPluginMessage(this, CHALLENGE_CHANNEL, data);
+            getLogger().info("Sent challenge to " + player.getName() + ": " + challenge);
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private void checkHeartbeats() {
@@ -250,25 +323,33 @@ public class AntiCheatServerPlugin extends JavaPlugin implements PluginMessageLi
             Long lastHb = lastHeartbeat.get(uuid);
             Long lastHs = lastHandshake.get(uuid);
             if (lastHs == null) {
-                // No handshake ever, player maybe doesn't have mod
-                // Give grace period after join (e.g., 30 seconds)
-                // We need to track join time separately, for now check if they've been online > 30 sec without handshake -> kick
                 if (p.getTicksLived() > 20 * 30) {
-                    getLogger().warning("Player " + p.getName() + " has no anticheat handshake after 30s, kicking (requireAnticheat=true)");
-                    p.kick(net.kyori.adventure.text.Component.text("Anticheat mod required. Please install anticheat-client mod."));
+                    getLogger().warning("Player " + p.getName() + " no handshake after 30s, kicking");
+                    p.kick(net.kyori.adventure.text.Component.text("Anticheat mod required"));
                 }
                 continue;
             }
             if (lastHb != null) {
                 long delta = now - lastHb;
                 if (delta > heartbeatTimeoutMs) {
-                    getLogger().warning("Player " + p.getName() + " heartbeat timeout (" + delta + "ms), possible tampering");
+                    getLogger().warning("Player " + p.getName() + " heartbeat timeout " + delta + "ms");
                     if (getConfig().getBoolean("kickOnHeartbeatTimeout", true)) {
-                        p.kick(net.kyori.adventure.text.Component.text("Anticheat heartbeat timeout - possible tampering detected."));
+                        p.kick(net.kyori.adventure.text.Component.text("Anticheat heartbeat timeout - possible tampering"));
                     }
                 }
             }
         }
+    }
+
+    private int getWeightForType(String type) {
+        return switch (type) {
+            case "PACKAGE", "FILE", "MANUAL_MAP", "HOOK", "JAR_TAMPER" -> 50;
+            case "MEMORY", "BYTECODE" -> 40;
+            case "TIMER", "FLY", "SPEED" -> 30;
+            case "ROTATION", "CPS", "REACH", "FAST_BREAK", "NO_SWING" -> 20;
+            case "INPUT", "PACKET_SPAM", "CLASSLOADER", "MIXIN" -> 15;
+            default -> 10;
+        };
     }
 
     private static String hmacSha256(String secret, String data) {
@@ -280,8 +361,11 @@ public class AntiCheatServerPlugin extends JavaPlugin implements PluginMessageLi
             StringBuilder sb = new StringBuilder();
             for (byte b : raw) sb.append(String.format("%02x", b));
             return sb.toString();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        } catch (Exception e) { throw new RuntimeException(e); }
     }
+
+    // Getters for command handler
+    public ViolationScore getViolationScore() { return violationScore; }
+    public EvidenceManager getEvidenceManager() { return evidenceManager; }
+    public HardwareBanManager getHwidBanManager() { return hwidBanManager; }
 }

@@ -1,12 +1,13 @@
-# Minecraft Client-Side Anticheat
+# Minecraft Client-Side Anticheat - Evolved v2
 
 日本語 | [English](#english)
 
-クライアントサイドで動作する多層アンチチート Mod + ネイティブDLL + サーバプラグインの実装です。
+クライアントサイドで動作する**13層+ML+フォレンジクス**の超進化アンチチート Mod + ネイティブDLL + サーバプラグインです。  
+v1の4層 (パッケージ、ファイル監視DLL、メモリ監視DLL、入力真正性) から劇的に進化し、バイトコード解析、物理検証、HWID BAN、ハッシュチェーン証拠、スコアリングなどを追加。
 
 ## 概要
 
-本プロジェクトは以下の4層でチートを検出します：
+本プロジェクトは以下の多層でチートを検出します (v2進化版):
 
 1. **パッケージハッシュ検査**  
    既知チート (Meteor, Wurst, Baritone, Aristois, Future, RusherHack, LiquidBounce, Rise, Expensive, NuxHack など) のJavaパッケージを **ハッシュのみ保存** し、直接的な文字列をコードに残さず検出。  

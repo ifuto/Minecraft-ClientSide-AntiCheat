@@ -7,7 +7,10 @@
   "client": [
     "MinecraftClientMixin",
     "MouseMixin",
-    "KeyboardMixin"
+    "KeyboardMixin",
+    "PlayerMovementMixin",
+    "ClientPacketMixin",
+    "LivingEntityMixin"
   ],
   "injectors": {
     "defaultRequire": 1

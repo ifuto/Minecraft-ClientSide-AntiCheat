@@ -10,7 +10,7 @@ find_package(JNI REQUIRED)
 include_directories(${JNI_INCLUDE_DIRS})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# Source files
+# Source files - evolution includes advanced guards
 set(SOURCES
     src/main.cpp
     src/sha256.cpp
@@ -18,6 +18,11 @@ set(SOURCES
     src/memory_guard.cpp
     src/input_hook.cpp
     src/jni_bridge.cpp
+    src/advanced/syscall_guard.cpp
+    src/advanced/anti_debug.cpp
+    src/advanced/hwid.cpp
+    src/advanced/integrity.cpp
+    src/advanced/advanced_jni.cpp
 )
 
 # Build shared library (DLL / SO)

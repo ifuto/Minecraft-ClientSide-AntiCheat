@@ -29,6 +29,20 @@ public final class Config {
     public boolean enableFileMonitor = true;
     public boolean enableMemoryGuard = true;
     public boolean enableInputAuth = true;
+    // Evolution toggles
+    public boolean enableBytecodeScan = true;
+    public boolean enableMovementCheck = true;
+    public boolean enableWorldInteractionCheck = true;
+    public boolean enableIntegrityCheck = true;
+    public boolean enableAntiDebug = true;
+    public boolean enableRenderGuard = true;
+    public boolean enablePacketAnalysis = true;
+    public boolean enableScoring = true;
+    public long bytecodeScanIntervalMs = 120000;
+    public long movementCheckIntervalMs = 50; // per tick but config
+    public double maxHorizontalSpeed = 0.35;
+    public int evidenceMaxSize = 2000;
+    public double banThreshold = 80.0;
 
     public Config() {
         load();
@@ -51,6 +65,18 @@ public final class Config {
                 enableFileMonitor = Boolean.parseBoolean(props.getProperty("enableFileMonitor", String.valueOf(enableFileMonitor)));
                 enableMemoryGuard = Boolean.parseBoolean(props.getProperty("enableMemoryGuard", String.valueOf(enableMemoryGuard)));
                 enableInputAuth = Boolean.parseBoolean(props.getProperty("enableInputAuth", String.valueOf(enableInputAuth)));
+                enableBytecodeScan = Boolean.parseBoolean(props.getProperty("enableBytecodeScan", String.valueOf(enableBytecodeScan)));
+                enableMovementCheck = Boolean.parseBoolean(props.getProperty("enableMovementCheck", String.valueOf(enableMovementCheck)));
+                enableWorldInteractionCheck = Boolean.parseBoolean(props.getProperty("enableWorldInteractionCheck", String.valueOf(enableWorldInteractionCheck)));
+                enableIntegrityCheck = Boolean.parseBoolean(props.getProperty("enableIntegrityCheck", String.valueOf(enableIntegrityCheck)));
+                enableAntiDebug = Boolean.parseBoolean(props.getProperty("enableAntiDebug", String.valueOf(enableAntiDebug)));
+                enableRenderGuard = Boolean.parseBoolean(props.getProperty("enableRenderGuard", String.valueOf(enableRenderGuard)));
+                enablePacketAnalysis = Boolean.parseBoolean(props.getProperty("enablePacketAnalysis", String.valueOf(enablePacketAnalysis)));
+                enableScoring = Boolean.parseBoolean(props.getProperty("enableScoring", String.valueOf(enableScoring)));
+                bytecodeScanIntervalMs = Long.parseLong(props.getProperty("bytecodeScanIntervalMs", String.valueOf(bytecodeScanIntervalMs)));
+                maxHorizontalSpeed = Double.parseDouble(props.getProperty("maxHorizontalSpeed", String.valueOf(maxHorizontalSpeed)));
+                evidenceMaxSize = Integer.parseInt(props.getProperty("evidenceMaxSize", String.valueOf(evidenceMaxSize)));
+                banThreshold = Double.parseDouble(props.getProperty("banThreshold", String.valueOf(banThreshold)));
             } else {
                 save();
             }
@@ -75,7 +101,19 @@ public final class Config {
             props.setProperty("enableFileMonitor", String.valueOf(enableFileMonitor));
             props.setProperty("enableMemoryGuard", String.valueOf(enableMemoryGuard));
             props.setProperty("enableInputAuth", String.valueOf(enableInputAuth));
-            props.store(Files.newOutputStream(CONFIG_PATH), "Anticheat client config");
+            props.setProperty("enableBytecodeScan", String.valueOf(enableBytecodeScan));
+            props.setProperty("enableMovementCheck", String.valueOf(enableMovementCheck));
+            props.setProperty("enableWorldInteractionCheck", String.valueOf(enableWorldInteractionCheck));
+            props.setProperty("enableIntegrityCheck", String.valueOf(enableIntegrityCheck));
+            props.setProperty("enableAntiDebug", String.valueOf(enableAntiDebug));
+            props.setProperty("enableRenderGuard", String.valueOf(enableRenderGuard));
+            props.setProperty("enablePacketAnalysis", String.valueOf(enablePacketAnalysis));
+            props.setProperty("enableScoring", String.valueOf(enableScoring));
+            props.setProperty("bytecodeScanIntervalMs", String.valueOf(bytecodeScanIntervalMs));
+            props.setProperty("maxHorizontalSpeed", String.valueOf(maxHorizontalSpeed));
+            props.setProperty("evidenceMaxSize", String.valueOf(evidenceMaxSize));
+            props.setProperty("banThreshold", String.valueOf(banThreshold));
+            props.store(Files.newOutputStream(CONFIG_PATH), "Anticheat client config v2 evolved");
         } catch (IOException e) {
             e.printStackTrace();
         }
