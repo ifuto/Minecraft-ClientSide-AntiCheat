@@ -1,0 +1,19 @@
+name: AnticheatServer
+version: 1.0.0
+main: com.anticheat.server.AntiCheatServerPlugin
+api-version: '1.20'
+author: Anticheat Team
+description: Server side plugin for client-side anticheat. Handles self-ban packets (anticheat:violation), heartbeat, and handshake. Executes minecraft:ban on violation.
+website: https://github.com/ifuto/Minecraft-ClientSide-AntiCheat
+prefix: AnticheatServer
+
+commands:
+  anticheat:
+    description: Anticheat admin commands
+    usage: /anticheat reload|status
+    permission: anticheat.admin
+
+permissions:
+  anticheat.admin:
+    description: Admin for anticheat server
+    default: op

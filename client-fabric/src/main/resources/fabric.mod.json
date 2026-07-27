@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "anticheat-client",
+  "version": "1.0.0",
+  "name": "ClientSide Anticheat",
+  "description": "Client-side anticheat with package hash scanning, native file monitor DLL, memory guard, and input authenticity verification. Includes self-ban packet to server.",
+  "authors": ["Anticheat Team"],
+  "contact": {
+    "repo": "https://github.com/ifuto/Minecraft-ClientSide-AntiCheat"
+  },
+  "license": "MIT",
+  "icon": "assets/anticheat-client/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.anticheat.client.AntiCheatClientMod"]
+  },
+  "mixins": ["anticheat.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.14.21",
+    "fabric-api": "*",
+    "minecraft": "1.20.x",
+    "java": ">=17"
+  },
+  "suggests": {
+    "another-mod": "*"
+  },
+  "custom": {
+    "anticheat": {
+      "description": "4-layer protection: package hash, mod folder DLL monitor, memory guard, input device verification"
+    }
+  }
+}

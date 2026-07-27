@@ -1,0 +1,39 @@
+# Gradle
+.gradle/
+build/
+out/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# IntelliJ
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# VSCode
+.vscode/
+
+# Native build
+native/build/
+*.dll
+*.so
+*.dylib
+!client-fabric/src/main/resources/natives/**/README.txt
+
+# Fabric
+run/
+remappedSrc/
+fabric.mod.json.remapped
+
+# Paper
+server-paper/run/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config generated
+config/
+logs/

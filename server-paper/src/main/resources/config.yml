@@ -1,0 +1,21 @@
+# Anticheat Server Config
+# IMPORTANT: This hmacSecret must match client config/anticheat-client.properties hmacSecret
+# Use a strong random 256-bit secret, e.g., generated via: openssl rand -hex 32
+hmacSecret: "change-me-in-production-256-bit-secret"
+
+# How long to wait for heartbeat before considering client tampered (ms)
+heartbeatTimeoutMs: 60000
+
+# If true, players must have anticheat-client mod installed to join
+requireAnticheat: false
+
+# If true, ban player when violation received
+enableBan: true
+
+# Command executed on violation. Placeholders: %player%, %reason%, %uuid%
+# For vanilla, "ban %player% %reason%" uses minecraft:ban
+# For LiteBans: "litebans:ban %player% %reason%"
+banCommand: "ban %player% %reason%"
+
+# Kick on heartbeat timeout?
+kickOnHeartbeatTimeout: true
