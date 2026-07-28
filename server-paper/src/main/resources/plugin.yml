@@ -12,6 +12,11 @@ commands:
     description: Anticheat admin commands
     usage: /anticheat reload|status
     permission: anticheat.admin
+  cac:
+    description: Client anticheat profile commands
+    usage: /cac profile <player> [page] | /cac bprofile <player> [page] | /cac list
+    permission: anticheat.admin
+    aliases: [clientanticheat, clientac]
 
 permissions:
   anticheat.admin:

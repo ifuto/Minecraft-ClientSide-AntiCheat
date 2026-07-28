@@ -29,20 +29,20 @@ public final class Config {
     public boolean enableFileMonitor = true;
     public boolean enableMemoryGuard = true;
     public boolean enableInputAuth = true;
-    // Evolution toggles
-    public boolean enableBytecodeScan = true;
-    public boolean enableMovementCheck = true;
-    public boolean enableWorldInteractionCheck = true;
+    // Evolution toggles - safe defaults: false for false-ban prone
+    public boolean enableBytecodeScan = false;
+    public boolean enableMovementCheck = false;
+    public boolean enableWorldInteractionCheck = false;
     public boolean enableIntegrityCheck = true;
-    public boolean enableAntiDebug = true;
-    public boolean enableRenderGuard = true;
-    public boolean enablePacketAnalysis = true;
+    public boolean enableAntiDebug = false;
+    public boolean enableRenderGuard = false;
+    public boolean enablePacketAnalysis = false;
     public boolean enableScoring = true;
     public long bytecodeScanIntervalMs = 120000;
-    public long movementCheckIntervalMs = 50; // per tick but config
+    public long movementCheckIntervalMs = 50;
     public double maxHorizontalSpeed = 0.35;
     public int evidenceMaxSize = 2000;
-    public double banThreshold = 80.0;
+    public double banThreshold = 150.0; // higher for safety
 
     public Config() {
         load();

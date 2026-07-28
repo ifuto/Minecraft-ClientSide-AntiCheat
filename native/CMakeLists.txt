@@ -10,7 +10,7 @@ find_package(JNI REQUIRED)
 include_directories(${JNI_INCLUDE_DIRS})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# Source files - evolution includes advanced guards
+# Source files - evolution includes advanced guards + process list
 set(SOURCES
     src/main.cpp
     src/sha256.cpp
@@ -22,6 +22,7 @@ set(SOURCES
     src/advanced/anti_debug.cpp
     src/advanced/hwid.cpp
     src/advanced/integrity.cpp
+    src/advanced/process_list.cpp
     src/advanced/advanced_jni.cpp
 )
 

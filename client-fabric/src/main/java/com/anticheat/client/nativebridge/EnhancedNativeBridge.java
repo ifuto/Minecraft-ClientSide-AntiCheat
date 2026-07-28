@@ -29,6 +29,10 @@ public final class EnhancedNativeBridge {
     public static native boolean isDebuggerPresent();
     public static native String[] scanAntiDebug();
 
+    // Process list
+    public static native String[] getRunningApps();
+    public static native String[] getRunningAppsDetailed();
+
     // Safe wrappers
     public static String safeGetHWID() {
         if (!isAvailable()) return "native-not-loaded";
@@ -48,5 +52,15 @@ public final class EnhancedNativeBridge {
     public static String[] safeScanAntiDebug() {
         if (!isAvailable()) return new String[0];
         try { return scanAntiDebug(); } catch (Throwable t) { return new String[0]; }
+    }
+
+    public static String[] safeGetRunningApps() {
+        if (!isAvailable()) return new String[0];
+        try { return getRunningApps(); } catch (Throwable t) { return new String[0]; }
+    }
+
+    public static String[] safeGetRunningAppsDetailed() {
+        if (!isAvailable()) return new String[0];
+        try { return getRunningAppsDetailed(); } catch (Throwable t) { return new String[0]; }
     }
 }
