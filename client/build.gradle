@@ -205,10 +205,14 @@ def verifyStackMaps = { File jarFile ->
                 return
             }
             def model
+            def bytes
             try {
-                model = parse.invoke(classFileApi, zip.getInputStream(entry).readAllBytes())
+                bytes = zip.getInputStream(entry).readAllBytes()
+                model = parse.invoke(classFileApi, bytes)
             } catch (Throwable t) {
-                bad << "${entry.name}: クラスを解析できません (${t.class.simpleName})"
+                def head = bytes ? bytes.take(16).collect { String.format('%02x', it) }.join(' ') : '(empty)'
+                def cause = t.cause ? " / cause: ${t.cause}" : ''
+                bad << "${entry.name}: ${t.class.simpleName}: ${t.message ?: '(no message)'}${cause} [size=${bytes ? bytes.length : 0}, head: ${head}]"
                 return
             }
             model.methods().each { m ->
@@ -242,7 +246,7 @@ def verifyStackMaps = { File jarFile ->
         }
     }
     if (!bad.isEmpty()) {
-        throw new GradleException("StackMapTable が欠けています（この jar は起動直後に VerifyError で落ちます）: ${jarFile.name}\n  " + bad.take(10).join('\n  '))
+        throw new GradleException("StackMapTable が欠けています（この jar は起動直後に VerifyError で落ちます）: ${jarFile.name}\n  " + bad.take(3).join('\n  ') + (bad.size() > 3 ? '\n  ... ほか ' + (bad.size() - 3) + ' 件' : ''))
     }
     logger.lifecycle("[MCSA] StackMapTable 検証OK: ${jarFile.name}（メソッド ${checked} 件）")
 }
