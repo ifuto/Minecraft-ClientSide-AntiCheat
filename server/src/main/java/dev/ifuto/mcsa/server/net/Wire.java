@@ -29,6 +29,8 @@ public final class Wire {
     public static final String CH_EVIDENCE = "mcsa:evidence";
     public static final String CH_DIGEST = "mcsa:digest";
     public static final String CH_ADMIN = "mcsa:admin";
+    /** S2C: 証拠（画面）を OP のクライアントへ転送する（OP 用 MOD が入っている相手だけ） */
+    public static final String CH_SHOT = "mcsa:shot";
 
     /** task の指示の種類（クライアント側 {@code TaskPayload} と一致させる） */
     public static final int TASK_RESCAN = 1;
@@ -106,6 +108,26 @@ public final class Wire {
         return writer.toByteArray();
     }
 
+    /**
+     * S2C: 証拠（画面）を OP のクライアントへ転送する。
+     *
+     * <p>OP 用 MOD（{@code mcsa-admin}）が入っている相手にだけ送る
+     * （{@code Player#hasListeningPluginChannel} で判定）。
+     * 並びはクライアント側 {@code ShotPayload} と一致させること。
+     */
+    public static byte[] encodeShot(int transferId, int kind, int seq, int total, String name, byte[] data) {
+        Writer writer = new Writer();
+        writer.varInt(transferId);
+        writer.varInt(kind);
+        writer.varInt(seq);
+        writer.varInt(total);
+        writer.string(name == null ? "" : name);
+        byte[] chunk = data == null ? new byte[0] : data;
+        writer.varInt(chunk.length);
+        writer.raw(chunk);
+        return writer.toByteArray();
+    }
+
     /** S2C: OP の MOD への応答（テキスト） */
     public static byte[] encodeAdminMessage(String text) {
         Writer writer = new Writer();
@@ -166,6 +188,10 @@ public final class Wire {
                 v >>>= 7;
             }
             out.write(v & 0x7F);
+        }
+
+        void raw(byte[] value) {
+            out.write(value, 0, value.length);
         }
 
         void string(String value) {

@@ -1,0 +1,52 @@
+Data Privacy and Incident Prevention Guidelines
+
+This notice is shown once by the MCSA client Mod. By clicking "I Agree" you accept
+that the following data may be collected from this computer and sent to the server
+you join. If you do not agree, click "Decline and Quit" - Minecraft will close and
+you will not be able to play on servers that require this Mod.
+
+1. Definition of Collected Data and Purpose of Use
+
+The data collected, processed, or output by this Mod/Plugin (including telemetry
+data such as MCIDs, executed mod configuration profiles, resource pack/shader
+configuration data, and client-side generated in-game screenshots) is retained as
+activity logs solely for the purposes of detecting cheating behavior within game
+operations, and deterring or identifying unauthorized access and Terms of Service
+(ToS) violations (incidents).
+
+2. Non-Applicability of Personally Identifiable Information (PII)
+
+The collected data constitutes dynamic data contingent upon gameplay and the
+client-side environment; therefore, it does not independently constitute Personally
+Identifiable Information (PII) capable of identifying or isolating a specific
+individual (real-world identity). Furthermore, the administration strictly abstains
+from executing cross-references or data correlation between these public identifiers
+(such as MCIDs) and registered profile data (SNS account credentials) on external
+platforms including X (formerly Twitter) and YouTube, and will under no circumstances
+attempt profiling or individual identification.
+
+3. Data Management, Security, and Prohibition of Third-Party Disclosure
+
+The compiled log data is strictly managed and obfuscated for the minimum duration
+requisite for anti-cheat countermeasures and security audits. Upon the expiration of
+the retention period, said data shall be promptly and irreversibly purged. Except
+where disclosure is mandated by applicable laws or statutory authorities, the acquired
+data shall not be disclosed or transferred to any third party.
+
+--------------------------------------------------------------------------
+What this means in practice (technical summary, not legal text)
+
+- Sent on request from a server running the MCSA plugin: your Minecraft UUID/name,
+  the list of installed mods (id, name, version), resource packs, shader packs,
+  file names and SHA-256 hashes of those files, JVM arguments that look like code
+  injection, names of loaded libraries, names of classes that match the server's
+  detection list, and the integrity hash of this Mod itself.
+- Sent only when a server operator runs a command: a single screenshot of your
+  game window (PNG/JPEG). Never recorded continuously, never audio, never other
+  windows or files. Nothing is displayed on your screen when this happens.
+- Sent periodically: a 16 character hash describing the state of the client, so the
+  server can tell whether the Mod is still running unmodified.
+- You can restrict or refuse any of the above in config/mcsa/client.json. Refusing
+  means servers that require this Mod will not let you join.
+- Screenshots are stored on the server under plugins/MCSA/evidence/ together with an
+  audit log recording which operator requested them, when and why.

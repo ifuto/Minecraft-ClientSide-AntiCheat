@@ -35,6 +35,7 @@ public final class ModPolicy {
     public void classify(ClientReport report) {
         McsaConfig config = plugin.config();
 
+        classifyConsent(report, config);
         classifyTrust(report, config);
         classifyMods(report, config);
         classifyModJars(report);
@@ -42,6 +43,29 @@ public final class ModPolicy {
         classifyShaders(report, config);
         classifyProbes(report);
         classifyRedacted(report);
+    }
+
+    /**
+     * プライバシィ告知への同意を確認する。
+     *
+     * <p>クライアントは起動時に告知を出し、同意するまでプレイできない（拒否すると
+     * Minecraft が終了する）。同意の事実（文面の指紋と時刻）はレポートに乗ってくるので、
+     * ここで「同意していない」「運営が配っている文面と違う版に同意している」を拾う。
+     */
+    private void classifyConsent(ClientReport report, McsaConfig config) {
+        if (!config.consentRequired) {
+            return;
+        }
+        JsonObject consent = report.consent();
+        boolean accepted = consent.has("accepted") && consent.get("accepted").getAsBoolean();
+        if (!accepted) {
+            report.flag("CONSENT_MISSING", true);
+            return;
+        }
+        String hash = consent.has("hash") ? consent.get("hash").getAsString() : "";
+        if (!config.consentNoticeHash.isEmpty() && !config.consentNoticeHash.equalsIgnoreCase(hash)) {
+            report.flag("CONSENT_NOTICE_MISMATCH:" + hash, false);
+        }
     }
 
     /**

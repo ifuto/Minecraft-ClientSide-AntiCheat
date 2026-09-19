@@ -3,6 +3,39 @@
 この MOD はプレイヤーの PC から情報をサーバーへ送る。
 配布する前に、このページの内容をそのまま案内に載せること。
 
+## 起動時の同意（consent）
+
+Minecraft を起動すると、**プライバシィ告知の画面が出る**。選べるのは 2 つだけ。
+
+| 操作 | 何が起きるか |
+|------|--------------|
+| **I Agree** | 同意を記録して普通にプレイできる。以降は出ない |
+| **Decline and Quit** | 拒否を記録して **Minecraft を終了する** |
+
+- ESC では閉じられない。同意するまでプレイは始まらない。
+- 拒否したあとプレイする唯一の方法は **この MOD を抜くこと**。
+  抜けばサーバー側の導入必須チェック（`enforce.mode`）で入室を断られる。
+- 同意は「文面の SHA-256（先頭 12 文字）」として `config/mcsa/client.json` に残る。
+  **文面が変われば再度同意を取り直す**（MOD の更新でも、運営が文面を編集しても）。
+- 同意の事実（`consent.accepted` / `hash` / `at`）はレポートに乗せてサーバーにも残る。
+  同意していないクライアントは `CONSENT_MISSING`（critical）になる。
+- 告知文面は初回起動時に `config/mcsa/privacy-notice.txt` へ書き出される。
+  **サーバー運営が自分の言葉に書き換えてよい**（書き換えると指紋が変わり、
+  全プレイヤーに再同意が求められる。サーバー側 `consent.notice-hash` も合わせること）。
+
+告知文面（英語・既定）は [`client/src/main/resources/privacy-notice.txt`](../client/src/main/resources/privacy-notice.txt)。
+要点は 3 つ。
+
+1. **Definition of Collected Data and Purpose of Use** … 収集するのは MCID、MOD 構成、
+   リソースパック／シェーダー構成、クライアント側で生成したゲーム内スクリーンショットなどで、
+   目的はチート検知と不正アクセス／ToS 違反の抑止・特定に限る。
+2. **Non-Applicability of PII** … 収集データはゲームプレイとクライアント環境に依存する動的データであり、
+   単独では実世界の個人を特定できる PII にならない。運営は MCID と X（旧 Twitter）・YouTube などの
+   外部プラットフォームの登録情報を突き合わせないし、プロファイリングもしない。
+3. **Data Management, Security, and Prohibition of Third-Party Disclosure** … ログは
+   アンチチートとセキュリティ監査に必要な最小期間だけ管理し、期間満了後は速やかに消去する。
+   法令等による開示要求を除き、第三者に開示・提供しない。
+
 ## 送られるもの
 
 サーバーが `mcsa:challenge` を送ってきたときだけ、以下を送る。

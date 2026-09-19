@@ -5,6 +5,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.ifuto.mcsa.client.McsaClient;
 import dev.ifuto.mcsa.client.McsaConfig;
+import dev.ifuto.mcsa.client.consent.ConsentManager;
 import dev.ifuto.mcsa.client.integrity.Findings;
 import dev.ifuto.mcsa.client.integrity.RuntimeProbes;
 import dev.ifuto.mcsa.client.integrity.SelfIntegrity;
@@ -81,6 +82,13 @@ public final class ReportBuilder {
             redacted.add("injection");
         }
         root.add("redacted", redacted);
+
+        // 同意の記録（文面の指紋と時刻）。サーバー側でも CONSENT_MISSING を判定する
+        JsonObject consent = new JsonObject();
+        consent.addProperty("accepted", ConsentManager.accepted());
+        consent.addProperty("hash", ConsentManager.hash());
+        consent.addProperty("at", config.consentAt);
+        root.add("consent", consent);
 
         if (config.collectMods && wants(requested, ChallengePayload.FLAG_MODS)) {
             ModScanner.collect(root, config);

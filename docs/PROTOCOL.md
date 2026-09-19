@@ -28,6 +28,7 @@ Minecraft の慣例どおり。
 | `mcsa:challenge`    | S2C  | セッションと nonce の発行（申告の要求） |
 | `mcsa:task`         | S2C  | OP からの指示（再申告 / 画面取得 / 監視）|
 | `mcsa:adminmsg`     | S2C  | OP 用 MOD への応答テキスト              |
+| `mcsa:shot`         | S2C  | 保存済みの証拠を OP のクライアントへ転送 |
 | `mcsa:hello`        | C2S  | 最小限の自己申告（導入判定）            |
 | `mcsa:report`       | C2S  | レポート本体の断片                      |
 | `mcsa:seal`         | C2S  | HMAC による封印                         |
@@ -35,7 +36,8 @@ Minecraft の慣例どおり。
 | `mcsa:digest`       | C2S  | 常時監視の状態ダイジェスト              |
 | `mcsa:admin`        | C2S  | OP 用 MOD からのコマンド実行要求        |
 
-Bukkit 側では `mcsa:challenge` / `mcsa:task` / `mcsa:adminmsg` を outgoing、他 6 つを incoming として登録する
+Bukkit 側では `mcsa:challenge` / `mcsa:task` / `mcsa:adminmsg` / `mcsa:shot` を outgoing、
+他 6 つを incoming として登録する
 （`McsaPlugin#incomingChannels` / `#outgoingChannels`）。
 
 ## 2. `mcsa:challenge`（S2C）
@@ -135,7 +137,26 @@ HMAC は断片 0 だけでなく全断片に同じ値を入れる。断片 0 が
 サーバーは `flags != 0` を検出すると即アラートを出し、詳細を取るために再チャレンジする。
 `watchdog.timeout-seconds` を超えて届かなくなったら `WATCHDOG_SILENT` として記録する。
 
-## 5.4 `mcsa:admin` / `mcsa:adminmsg`
+## 5.4 `mcsa:shot`（S2C、複数回）
+
+サーバーが保存した証拠を、**指示を出した OP のクライアント**へ転送する。
+OP 用 MOD（`mcsa-admin`）が `mcsa:shot` を登録している相手だけに送る
+（`Player#hasListeningPluginChannel` で判定）。
+
+| # | 型     | 名前       | 説明                                  |
+|---|--------|------------|---------------------------------------|
+| 1 | varint | transferId | 転送 ID（断片を束ねる）                |
+| 2 | varint | kind       | 1=画面 3=テキスト                     |
+| 3 | varint | seq        | 断片番号（0 始まり）                   |
+| 4 | varint | total      | 断片の総数（上限 1024）                |
+| 5 | string | name       | ファイル名                             |
+| 6 | bytes  | data       | 断片（最大 16384 バイト）               |
+
+受け取った OP 側は `.minecraft/mcsa-evidence/` に保存し、ゲーム内ビューア
+（`EvidenceScreen`）を開く。設定（`config/mcsa/admin.json`）で OS のビューアを
+自動で開くこともできる。サーバー側の原本と監査ログはそのまま残る。
+
+## 5.5 `mcsa:admin` / `mcsa:adminmsg`
 
 OP 用 MOD（`admin/`）との連携。
 
@@ -262,6 +283,12 @@ keyId = hex( HMAC-SHA256( key, utf8("mcsa/keyid/v1") ) )[0..12]
     "findingDropped": 0
   },
 
+  "consent": {
+    "accepted": true,
+    "hash": "9f2c1a4b7e04",
+    "at": 1758240000000
+  },
+
   "self": {
     "jarName": "mcsa-client-1.0.0.jar",
     "jarSize": 234567,
@@ -298,6 +325,8 @@ keyId = hex( HMAC-SHA256( key, utf8("mcsa/keyid/v1") ) )[0..12]
 | `MIXIN_INJECT_SAMPLE`    | 注入痕跡のサンプル（参考）                        |
 | `LIBRARY_COUNT`          | 読み込み中ライブラリの数（参考）                  |
 | `STATE_CHANGED` ★        | ウォッチドッグが起動時との差分を検出              |
+| `CONSENT_MISSING` ★      | プライバシィ告知に同意していない（`ModPolicy`）    |
+| `CONSENT_NOTICE_MISMATCH`| 運営が配っている文面と違う版に同意している         |
 | `ODD_CLASSPATH`          | クラスパスに見慣れない jar                        |
 
 ## 8. サイズとエラー処理

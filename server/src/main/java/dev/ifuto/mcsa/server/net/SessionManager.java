@@ -45,10 +45,13 @@ import java.util.zip.GZIPInputStream;
 public final class SessionManager implements Listener {
 
     private static final int MAX_REPORT_BYTES = 8 * 1024 * 1024;
+    /** 証拠転送の 1 断片（クライアント側 {@code ShotPayload.CHUNK_SIZE} と一致させる） */
+    private static final int SHOT_CHUNK = 16384;
 
     private final McsaPlugin plugin;
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
     private final AtomicInteger nextSessionId = new AtomicInteger(1);
+    private final AtomicInteger nextTransferId = new AtomicInteger(1);
     private final SecureRandom random = new SecureRandom();
 
     public SessionManager(McsaPlugin plugin) {
@@ -365,6 +368,49 @@ public final class SessionManager implements Listener {
         plugin.alerts().evidence(player, (evidence.kind() == Wire.EVIDENCE_SHOT ? "画面" : "テキスト")
                 + "を受信しました: " + plugin.evidence().root().relativize(file)
                 + " (" + data.length + " bytes, hmac=" + (valid ? "ok" : "INVALID") + ")");
+
+        // 指示を出した OP が OP 用 MOD を入れていたら、その画面に転送する
+        Player requester = Bukkit.getPlayerExact(session.requestedBy());
+        if (requester != null && forwardEvidence(requester, evidence.kind(), evidence.name(), data)) {
+            plugin.alerts().info(requester, player.getName() + " の"
+                    + (evidence.kind() == Wire.EVIDENCE_SHOT ? "画面" : "テキスト")
+                    + "をあなたのクライアントに転送しました");
+        }
+    }
+
+    /**
+     * 証拠（画面）を OP のクライアントへ転送する。
+     *
+     * <p>OP 用 MOD（{@code mcsa-admin}）を入れていない相手には送れないので、
+     * {@code hasListeningPluginChannel} で確認してから送る。
+     *
+     * @return 転送できたか
+     */
+    public boolean forwardEvidence(Player admin, int kind, String name, byte[] data) {
+        if (admin == null || !admin.isOnline() || data == null) {
+            return false;
+        }
+        if (!admin.hasListeningPluginChannel(Wire.CH_SHOT)) {
+            return false;
+        }
+        int transferId = nextTransferId.getAndIncrement();
+        int total = Math.max(1, (data.length + SHOT_CHUNK - 1) / SHOT_CHUNK);
+        try {
+            for (int seq = 0; seq < total; seq++) {
+                int from = seq * SHOT_CHUNK;
+                int length = Math.min(SHOT_CHUNK, data.length - from);
+                byte[] chunk = new byte[Math.max(length, 0)];
+                if (length > 0) {
+                    System.arraycopy(data, from, chunk, 0, length);
+                }
+                admin.sendPluginMessage(plugin, Wire.CH_SHOT,
+                        Wire.encodeShot(transferId, kind, seq, total, name, chunk));
+            }
+        } catch (RuntimeException e) {
+            plugin.getLogger().warning("証拠の転送に失敗しました: " + e);
+            return false;
+        }
+        return true;
     }
 
     /** C2S: ウォッチドッグのダイジェスト（ハートビート） */

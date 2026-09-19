@@ -1,6 +1,7 @@
 package dev.ifuto.mcsa.client;
 
 import dev.ifuto.mcsa.client.collect.ReportBuilder;
+import dev.ifuto.mcsa.client.consent.ConsentScreen;
 import dev.ifuto.mcsa.client.integrity.SelfIntegrity;
 import dev.ifuto.mcsa.client.integrity.Watchdog;
 import dev.ifuto.mcsa.client.net.ChallengePayload;
@@ -9,6 +10,7 @@ import dev.ifuto.mcsa.client.net.Payloads;
 import dev.ifuto.mcsa.client.net.TaskPayload;
 import dev.ifuto.mcsa.client.net.Tasks;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -29,6 +31,8 @@ public final class McsaClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("MCSA");
 
     private static McsaClient instance;
+    /** 起動直後の 1 tick だけ同意画面を確認する */
+    private static volatile boolean consentChecked;
 
     public static McsaClient get() {
         return instance;
@@ -54,6 +58,15 @@ public final class McsaClient implements ClientModInitializer {
         // S2C: OP からの指示（再申告 / 画面取得 / 監視間隔の変更）
         ClientPlayNetworking.registerGlobalReceiver(TaskPayload.ID,
                 (payload, context) -> Tasks.onTask(payload));
+
+        // 起動直後にプライバシィ告知を出す（同意するまでプレイできない）
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (consentChecked) {
+                return;
+            }
+            consentChecked = true;
+            ConsentScreen.openIfRequired(client);
+        });
 
         // 起動時に一度だけ自己整合性を計算しておく（重いので非同期）
         ReportBuilder.executor().execute(SelfIntegrity::prefetch);

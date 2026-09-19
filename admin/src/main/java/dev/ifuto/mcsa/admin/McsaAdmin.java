@@ -40,6 +40,7 @@ public final class McsaAdmin implements ClientModInitializer {
     public void onInitializeClient() {
         PayloadTypeRegistry.playC2S().register(AdminCommandPayload.ID, AdminCommandPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(AdminMsgPayload.ID, AdminMsgPayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(ShotPayload.ID, ShotPayload.CODEC);
 
         ClientPlayNetworking.registerGlobalReceiver(AdminMsgPayload.ID, (payload, context) -> {
             MinecraftClient client = MinecraftClient.getInstance();
@@ -47,6 +48,11 @@ public final class McsaAdmin implements ClientModInitializer {
                 return;
             }
             client.execute(() -> print(client, payload.message()));
+        });
+
+        // サーバーが保存した証拠（画面）を OP のクライアントへ転送してもらうチャンネル
+        ClientPlayNetworking.registerGlobalReceiver(ShotPayload.ID, (payload, context) -> {
+            EvidenceReceiver.onChunk(payload);
         });
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
@@ -88,7 +94,7 @@ public final class McsaAdmin implements ClientModInitializer {
         print(client, "§7 /acadmin info <player> … 詳細（注入観測・常時監視を含む）");
         print(client, "§7 /acadmin shot <player> [reason] … 画面を取得（対象には表示されません）");
         print(client, "§7 /acadmin watch <player> <seconds|off> … 高頻度監視");
-        print(client, "§7 /acadmin evidence <player> … 保存済みの証拠");
+        print(client, "§7 /acadmin evidence <player> [n] … 保存済みの証拠（自分の画面に転送される）");
         print(client, "§7 /acadmin scan <player> … 新しい nonce で再申告させる");
         print(client, "§7 /acadmin mods|packs|shaders|flags <player> … 一覧・検知履歴");
     }

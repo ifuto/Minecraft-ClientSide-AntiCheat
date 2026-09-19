@@ -58,7 +58,7 @@
 |----------|------|
 | `/ac shot <player> [reason]` | **画面を取得**してサーバーに保存する（対象の画面には何も表示されない） |
 | `/ac watch <player> <seconds\|off>` | 高頻度監視。ダイジェスト間隔を詰め、`evidence.capture.enabled=true` なら定期的に画面も取得 |
-| `/ac evidence <player>` | 保存済みの証拠（画像・テキスト）の一覧と保存先 |
+| `/ac evidence <player> [n]` | 保存済みの証拠の一覧と保存先。**OP 用 MOD を入れていれば n 番目（既定は最新）を自分のクライアントへ転送**してその場で見られる |
 
 ```
 > /ac shot Alex 通報対応
@@ -152,7 +152,11 @@
 
 - サーバー側の権限判定を通るので、MOD だけ入れても権限がなければ何もできない。
 - 実行結果と証拠の受信通知はチャットに出る（`mcsa:adminmsg`）。
-- 画面そのものはクライアントに送られない。サーバーの `plugins/MCSA/evidence/` に保存される。
+- 画面はサーバーの `plugins/MCSA/evidence/` に保存される（原本＋監査ログ）。
+- さらに、**画面取得を指示した OP が OP 用 MOD を入れていれば、その OP のクライアントにも
+  自動で転送される**（`mcsa:shot`）。受け取った側は `.minecraft/mcsa-evidence/` に保存し、
+  ゲーム内ビューアが開く。`/acadmin evidence <player>` でも取り寄せられる。
+- 転送先の OP が OP 用 MOD を入れていない場合は転送されず、サーバー上のファイルを開くことになる。
 
 ## 権限
 

@@ -49,7 +49,7 @@ public final class McsaPlugin extends JavaPlugin {
 
     /** サーバーが送信するチャンネル */
     public static List<String> outgoingChannels() {
-        return List.of(Wire.CH_CHALLENGE, Wire.CH_TASK, Wire.CH_ADMIN_MSG);
+        return List.of(Wire.CH_CHALLENGE, Wire.CH_TASK, Wire.CH_ADMIN_MSG, Wire.CH_SHOT);
     }
 
     @Override

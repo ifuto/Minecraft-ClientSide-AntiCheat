@@ -87,6 +87,12 @@ public final class McsaConfig {
     public double speedMaxPerTick = 0.6;
     public int speedMaxTicks = 10;
 
+    // --- プライバシィ告知（同意）
+    /** 同意していないクライアントを重大扱いにするか */
+    public boolean consentRequired = true;
+    /** 運営が配っている告知文面の指紋。空なら任意の版の同意を受理する */
+    public String consentNoticeHash = "";
+
     // --- 注入検知（Mixin / javaagent / ライブラリ名 / jar の中身）
     public boolean injectionEnabled = true;
     /** 出所不明の Mixin 設定を重大扱いにするか */
@@ -212,6 +218,9 @@ public final class McsaConfig {
         speedEnabled = config.getBoolean("checks.speed.enabled", true);
         speedMaxPerTick = config.getDouble("checks.speed.max-per-tick", 0.6);
         speedMaxTicks = config.getInt("checks.speed.max-ticks", 10);
+
+        consentRequired = config.getBoolean("consent.required", true);
+        consentNoticeHash = config.getString("consent.notice-hash", "").trim().toLowerCase(Locale.ROOT);
 
         injectionEnabled = config.getBoolean("injection.enabled", true);
         unknownMixinCritical = config.getBoolean("injection.unknown-mixin-critical", true);

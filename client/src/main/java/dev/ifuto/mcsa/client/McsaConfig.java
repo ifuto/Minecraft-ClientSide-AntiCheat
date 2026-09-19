@@ -47,6 +47,11 @@ public final class McsaConfig {
     /** 初回申告時にチャットへ告知を出す */
     public boolean chatNotice = true;
 
+    /** 同意したプライバシィ文面の指紋（空 = 未同意） */
+    public String consentHash = "";
+    /** 同意した時刻（ミリ秒） */
+    public long consentAt = 0;
+
     /** 注入（Mixin / agent / ライブラリ名 / jar の中身）の観測をする */
     public boolean collectInjection = true;
     /** 出所が分かっている Mixin 設定名（誤検知を減らすための許可リスト） */

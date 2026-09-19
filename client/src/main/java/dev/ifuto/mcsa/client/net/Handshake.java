@@ -3,6 +3,7 @@ package dev.ifuto.mcsa.client.net;
 import dev.ifuto.mcsa.client.McsaClient;
 import dev.ifuto.mcsa.client.McsaConfig;
 import dev.ifuto.mcsa.client.collect.ReportBuilder;
+import dev.ifuto.mcsa.client.consent.ConsentManager;
 import dev.ifuto.mcsa.client.crypto.Signer;
 import dev.ifuto.mcsa.client.integrity.SelfIntegrity;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -25,6 +26,12 @@ public final class Handshake {
         MinecraftClient client = MinecraftClient.getInstance();
         String address = currentServerAddress(client);
         McsaConfig config = McsaConfig.get();
+
+        if (!ConsentManager.accepted()) {
+            // 告知に同意していない間は送らない（通常は同意画面で止まっている）
+            McsaClient.LOGGER.info("[MCSA] プライバシィ告知に未同意のため自己申告を保留します");
+            return;
+        }
 
         if (!config.mayReport(address)) {
             McsaClient.LOGGER.info("[MCSA] {} への自己申告はクライアント設定で無効化されています", address);

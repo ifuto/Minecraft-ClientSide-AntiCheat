@@ -20,6 +20,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -385,6 +386,33 @@ public final class AcCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(text(" 保存先: " + plugin.evidence().root(), NamedTextColor.GRAY));
         sender.sendMessage(text(" 監査ログ: " + plugin.evidence().root().resolve("evidence-log.txt"),
                 NamedTextColor.GRAY));
+
+        // 自分が OP 用 MOD を入れていたら、指定の 1 件（既定は最新）を自分のクライアントへ転送する
+        int index = 0;
+        if (args.length > 2) {
+            try {
+                index = Math.max(0, Integer.parseInt(args[2]));
+            } catch (NumberFormatException e) {
+                index = 0;
+            }
+        }
+        if (sender instanceof Player admin && files.size() > index) {
+            Path file = files.get(index);
+            try {
+                byte[] data = Files.readAllBytes(file);
+                int kind = file.getFileName().toString().endsWith(".txt")
+                        ? Wire.EVIDENCE_NOTE : Wire.EVIDENCE_SHOT;
+                if (plugin.sessions().forwardEvidence(admin, kind, file.getFileName().toString(), data)) {
+                    sender.sendMessage(text(" " + file.getFileName() + " をあなたのクライアントに転送しました",
+                            NamedTextColor.GREEN));
+                } else {
+                    sender.sendMessage(text(" OP 用 MOD (mcsa-admin) が入っていないため転送できません。"
+                            + "サーバー上のファイルを直接開いてください。", NamedTextColor.YELLOW));
+                }
+            } catch (java.io.IOException e) {
+                sender.sendMessage(text(" ファイルを読めませんでした: " + e, NamedTextColor.RED));
+            }
+        }
     }
 
     private void kick(CommandSender sender, String[] args) {

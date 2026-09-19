@@ -154,9 +154,9 @@ def main() -> int:
     check("クライアント/サーバーのチャンネル名が一致",
           client_channels == server_channels,
           f"client={sorted(client_channels)} server={sorted(server_channels)}")
-    check("チャンネルが 9 本ある（申告3 + 証拠/監視2 + OP連携2 + チャレンジ/指示2）",
+    check("チャンネルが 10 本ある（申告3 + 証拠/監視3 + OP連携2 + チャレンジ/指示2）",
           client_channels == {"mcsa:challenge", "mcsa:task", "mcsa:hello", "mcsa:report", "mcsa:seal",
-                              "mcsa:evidence", "mcsa:digest", "mcsa:admin", "mcsa:adminmsg"},
+                              "mcsa:evidence", "mcsa:digest", "mcsa:admin", "mcsa:adminmsg", "mcsa:shot"},
           str(sorted(client_channels)))
 
     # 2. レポート JSON のキー

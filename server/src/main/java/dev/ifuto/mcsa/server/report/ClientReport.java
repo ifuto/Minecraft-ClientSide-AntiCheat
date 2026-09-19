@@ -134,6 +134,11 @@ public final class ClientReport {
         return array("shaderPackFiles");
     }
 
+    /** プライバシィ告知への同意（{@code accepted} / 文面の指紋 / 同意時刻） */
+    public JsonObject consent() {
+        return object("consent");
+    }
+
     /** クライアントが観測した「引っかかったもの」の一覧（{@code CODE:詳細}） */
     public List<String> findings() {
         List<String> out = new ArrayList<>();
