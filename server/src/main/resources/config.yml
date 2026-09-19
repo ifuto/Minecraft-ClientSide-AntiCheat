@@ -38,8 +38,8 @@ enforce:
   grace-ticks: 100
   # 未導入時の処分: KICK / WARN / LOG
   action: KICK
-  kick-message: "§cこのサーバーでは MCSA クライアントMODの導入が必要です。\n§7導入方法はこのサーバーの案内を確認してください。"
-  warn-message: "§e[MCSA] §7あなたは導入必須の対象ですが、MODが検出されませんでした。"
+  kick-message: "§c参加するには Better NArena の導入が必要です。\n§7配布ページからダウンロードしてから、もう一度参加してください。"
+  warn-message: "§e[Better NArena] §7あなたは導入必須の対象ですが、MODが検出されませんでした。"
 
 # ---------------------------------------------------------------------------
 # チャレンジ（レポート要求）
@@ -137,7 +137,7 @@ checks:
   alert-vl: 5
   # この違反レベルでキック（0 = キックしない）
   kick-vl: 0
-  kick-message: "§c不正な挙動が検出されました (MCSA)"
+  kick-message: "§c不正な挙動が検出されました (Better NArena)"
   reach:
     enabled: true
     max-reach: 3.1

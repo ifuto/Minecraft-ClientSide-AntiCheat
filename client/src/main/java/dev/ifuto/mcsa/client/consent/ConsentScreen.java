@@ -32,7 +32,7 @@ public final class ConsentScreen extends Screen {
     private int maxScroll;
 
     public ConsentScreen() {
-        super(Text.literal("MCSA - Data Privacy and Incident Prevention Guidelines"));
+        super(Text.literal("Better NArena - Data Privacy and Incident Prevention Guidelines"));
         this.lines = wrap(ConsentManager.text(), WRAP_WIDTH);
     }
 

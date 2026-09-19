@@ -43,7 +43,7 @@ public final class EvidenceScreen extends Screen {
     private String error;
 
     public EvidenceScreen(Path file, int bytes) {
-        super(Text.literal("MCSA Evidence"));
+        super(Text.literal("Better NArena - Evidence"));
         this.file = file;
         this.bytes = bytes;
     }
@@ -94,7 +94,7 @@ public final class EvidenceScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, this.width, this.height, 0xF0101018);
         int centerX = this.width / 2;
-        context.drawCenteredTextWithShadow(this.textRenderer, "MCSA Evidence", centerX, 6, 0xFFD060);
+        context.drawCenteredTextWithShadow(this.textRenderer, "Better NArena - Evidence", centerX, 6, 0xFFD060);
 
         if (textureId != null && imageWidth > 0 && imageHeight > 0) {
             int maxWidth = this.width - 24;

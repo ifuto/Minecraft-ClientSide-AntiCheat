@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "mcsa-admin",
   "version": "${version}",
-  "name": "MCSA Admin Console",
-  "description": "MCSA サーバープラグインの OP 用クライアントMOD。自分のクライアントから /acadmin で調査コマンドを実行できます（サーバー側で mcsa.admin 権限が必要）。",
+  "name": "Better NArena Tools",
+  "description": "Better NArena の運営用ツール。/acadmin で調査コマンドを実行できます。",
   "authors": [
     "ifuto"
   ],
@@ -22,5 +22,6 @@
     "minecraft": "~1.21",
     "java": ">=21",
     "fabric-api": "*"
-  }
+  },
+  "icon": "assets/mcsa-admin/icon.png"
 }

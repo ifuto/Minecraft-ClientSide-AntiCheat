@@ -87,16 +87,16 @@ public final class EvidenceReceiver {
         boolean text = kind != null && kind == ShotPayload.KIND_NOTE;
         Path file = save(name, data, text);
         if (file == null) {
-            notify("[MCSA] 証拠を保存できませんでした（" + data.length + " bytes）", null, 0xFF5555);
+            notify("[Better NArena] 証拠を保存できませんでした（" + data.length + " bytes）", null, 0xFF5555);
             return;
         }
         if (text) {
             String body = new String(data, java.nio.charset.StandardCharsets.UTF_8);
-            notify("[MCSA] テキスト証拠 " + file.getFileName() + ": "
+            notify("[Better NArena] テキスト証拠 " + file.getFileName() + ": "
                     + (body.length() > 300 ? body.substring(0, 300) + "…" : body), file, 0xFFFF55);
             return;
         }
-        notify("[MCSA] 画面を受信しました " + file.getFileName() + " (" + data.length
+        notify("[Better NArena] 画面を受信しました " + file.getFileName() + " (" + data.length
                 + " bytes) クリックで開く", file, 0x55FF55);
         if (AdminConfig.get().showScreen) {
             MinecraftClient client = MinecraftClient.getInstance();

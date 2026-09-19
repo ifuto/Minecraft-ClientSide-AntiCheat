@@ -18,6 +18,7 @@ CI の実ビルド（.github/workflows/build-check.yml）と合わせて使う�
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -242,6 +243,26 @@ def main() -> int:
           and "drawTexturedQuad" in screen_text
           and "destroyTexture" in screen_text,
           "EvidenceScreen.java（テクスチャ登録→描画→解放）")
+
+    # 配布名（Better NArena）の統一
+    mod_json = ROOT / "client" / "src" / "main" / "resources" / "fabric.mod.json"
+    admin_json = ROOT / "admin" / "src" / "main" / "resources" / "fabric.mod.json"
+    try:
+        mod_name = json.loads(mod_json.read_text(encoding="utf-8")).get("name", "")
+        admin_name = json.loads(admin_json.read_text(encoding="utf-8")).get("name", "")
+    except Exception:
+        mod_name = admin_name = ""
+    check("クライアント MOD の表示名が Better NArena（AC と分からない配布名）",
+          mod_name == "Better NArena"
+          and (ROOT / "client/src/main/resources/assets/mcsa/icon.png").exists(),
+          "fabric.mod.json の name か icon.png が欠けています")
+    check("未導入キックの文面が Better NArena を案内している",
+          "Better NArena" in (RESOURCES / "config.yml").read_text(encoding="utf-8"),
+          "enforce.kick-message を確認")
+    check("OP 用 MOD も Better NArena ブランド",
+          admin_name.startswith("Better NArena")
+          and (ROOT / "admin/src/main/resources/assets/mcsa-admin/icon.png").exists(),
+          "fabric.mod.json の name か icon.png が欠けています")
 
     check("COMMANDS.md に plugin.yml のコマンドが載っている", not missing_cmds,
               f"不足: {missing_cmds}" if missing_cmds else str(sorted(declared)))

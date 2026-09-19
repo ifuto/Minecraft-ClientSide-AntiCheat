@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "mcsa",
   "version": "${version}",
-  "name": "MCSA Client Guard",
-  "description": "サーバーが求めたときに、導入MOD・リソースパック・シェーダーの一覧を自己申告するクライアントMOD。判定と処分はサーバー側プラグイン(MCSA)が行います。送信範囲は config/mcsa/client.json で制限できます。",
+  "name": "Better NArena",
+  "description": "アリーナの対戦体験を向上させるサーバー連携MOD。データの取り扱いは初回起動時のプライバシー告知に記載されています。",
   "authors": [
     "ifuto"
   ],
@@ -22,5 +22,6 @@
     "minecraft": "~1.21",
     "java": ">=21",
     "fabric-api": "*"
-  }
+  },
+  "icon": "assets/mcsa/icon.png"
 }

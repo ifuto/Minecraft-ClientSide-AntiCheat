@@ -36,7 +36,7 @@ public final class Handshake {
         if (!config.mayReport(address)) {
             McsaClient.LOGGER.info("[MCSA] {} への自己申告はクライアント設定で無効化されています", address);
             if (config.chatNotice) {
-                notice(client, "§e[MCSA] §7このサーバへの環境情報の送信は設定で無効化しています。"
+                notice(client, "§e[Better NArena] §7このサーバへの環境情報の送信は設定で無効化しています。"
                         + "入室制限のあるサーバでは追い出されることがあります。");
             }
             return;
@@ -58,7 +58,7 @@ public final class Handshake {
                 String.valueOf(SelfIntegrity.jarSha256()), Signer.keyId(), flags));
 
         if (config.chatNotice && NOTICED.add(address == null ? "?" : address)) {
-            notice(client, "§e[MCSA] §7このサーバに MOD / リソースパック / シェーダーの一覧を送信しました。"
+            notice(client, "§e[Better NArena] §7このサーバに MOD / リソースパック / シェーダーの一覧を送信しました。"
                     + "送信内容は §fconfig/mcsa/client.json §7で制限できます。");
         }
 

@@ -80,7 +80,7 @@ public final class McsaAdmin implements ClientModInitializer {
             return false;
         }
         if (!ClientPlayNetworking.canSend(AdminCommandPayload.ID)) {
-            print(client, "§cこのサーバーは MCSA プラグイン（mcsa:admin）を受け付けていません");
+            print(client, "§cこのサーバーは Better NArena プラグイン（mcsa:admin）を受け付けていません");
             return false;
         }
         ClientPlayNetworking.send(new AdminCommandPayload(args));
@@ -89,7 +89,7 @@ public final class McsaAdmin implements ClientModInitializer {
     }
 
     private static void help(MinecraftClient client) {
-        print(client, "§6[MCSA-Admin] §7サーバーの /ac を実行します（権限 mcsa.admin が必要）");
+        print(client, "§6[Better NArena] §7サーバーの /ac を実行します（権限 mcsa.admin が必要）");
         print(client, "§7 /acadmin status … 導入状況");
         print(client, "§7 /acadmin info <player> … 詳細（注入観測・常時監視を含む）");
         print(client, "§7 /acadmin shot <player> [reason] … 画面を取得（対象には表示されません）");

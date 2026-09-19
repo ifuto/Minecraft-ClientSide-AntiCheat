@@ -164,8 +164,10 @@ public final class McsaConfig {
         }
         graceTicks = config.getInt("enforce.grace-ticks", 100);
         enforceAction = upper(config.getString("enforce.action", "KICK"));
-        kickMessage = config.getString("enforce.kick-message", "");
-        warnMessage = config.getString("enforce.warn-message", "");
+        kickMessage = config.getString("enforce.kick-message",
+                "§c参加するには Better NArena の導入が必要です。");
+        warnMessage = config.getString("enforce.warn-message",
+                "§e[Better NArena] §7あなたは導入必須の対象ですが、MODが検出されませんでした。");
 
         challengeDelayTicks = config.getInt("challenge.delay-ticks", 20);
         challengeIntervalTicks = config.getInt("challenge.interval-ticks", 6000);

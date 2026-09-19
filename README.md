@@ -54,6 +54,11 @@ java: 25                             # Loom 1.18 は JDK 25 が必要
 | サーバープラグイン | `server` | `server/build/libs/*.jar` |
 | OP 用 MOD | `admin` | `admin/build/libs/*.jar` |
 
+クライアント MOD は **「Better NArena」** という名前・アイコンで配布する
+（MOD 一覧を見た程度では対チェート用と分からない。内部 ID・チャンネル・設定パスは
+`mcsa` のままなので既存の仕組みに影響しない）。未導入で入ろうとしたプレイヤーには
+「参加するには Better NArena の導入が必要です。」とキックされる（`enforce.kick-message`）。
+
 3 つを一度に見たい場合は [`ci/build-check.yml`](ci/build-check.yml) を
 `.github/workflows/` にコピーする（client / admin / server を並列ビルドする）。
 
