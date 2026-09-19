@@ -6,7 +6,7 @@
 #       プレイヤー側は Java 21 のままで動く。
 #
 # 今の設定: クライアント MOD（client/）をビルド（StackMapTable 修正を難読化込みで検証）。
-#           admin は build: 17、server は build: 17（Paper 起動確認込み）で検証済み。
+#           admin は build: 18、server は build: 18（Paper 起動確認込み）で検証済み。
 #           3 つを一度に見たい場合は ci/build-check.yml を .github/workflows/ に置く。
 
 workdir: client
@@ -15,4 +15,4 @@ java: 25
 server_test: false
 
 # ビルド番号（この行を変えると push トリガーが走る）
-build: 17
+build: 18
