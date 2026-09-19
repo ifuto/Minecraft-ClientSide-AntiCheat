@@ -99,7 +99,7 @@ public final class McsaAdmin implements ClientModInitializer {
                 return;
             }
             MutableText text = Text.literal(message);
-            text.getStyle().withColor(Formatting.GRAY);
+            text.setStyle(text.getStyle().withColor(Formatting.GRAY));
             client.inGameHud.getChatHud().addMessage(text);
         } catch (Throwable ignored) {
             // HUD が無い状況（ログイン直後など）

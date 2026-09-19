@@ -5,15 +5,15 @@
 #       成果物のバイトコードは Java 21 向け（client/build.gradle の options.release=21）なので、
 #       プレイヤー側は Java 21 のままで動く。
 #
-# 今の設定: サーバープラグインをビルドして、CI 上で Paper 1.21.11 を実際に起動し、
-#           プラグインが Enable されるかまで確認する（server_test: true）。
-#           次は workdir: admin（OP 用 MOD）。
+# 今の設定: OP 用 MOD（admin/）をビルド。
+#           client / server は build: 9 / 10 で検証済み
+#           （server は Paper 1.21.11 の起動＋Enable まで確認済み）。
 #           3 つを一度に見たい場合は ci/build-check.yml を .github/workflows/ に置く。
 
-workdir: server
-artifact_path: server/build/libs/*.jar
+workdir: admin
+artifact_path: admin/build/libs/*.jar
 java: 25
-server_test: true
+server_test: false
 
 # ビルド番号（この行を変えると push トリガーが走る）
-build: 10
+build: 11
