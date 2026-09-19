@@ -220,46 +220,18 @@ tasks.register('obfuscateJar', JavaExec) {
 }
 
 /**
- * ProGuard に渡す Java 標準ライブラリを探す。
+ * ProGuard に渡すライブラリ。
  *
- * 1. ${java.home}/jmods/*.jmod          （通常の JDK）
- * 2. jimage で lib/modules を展開       （jmods を同梱しない JDK イメージ向け）
- * 3. どちらもない場合は空               （proguard.pro の -dontwarn に任せる）
+ * Java 標準ライブラリ（java.base）はあえて渡さない。
+ * Fabric Loom 1.18 は Gradle の実行に JDK 25 を要求するが、ProGuard 7.6.1 が読める
+ * クラスファイルは Java 23（version 67）までなので、JDK 25 の jmods / jimage を
+ * 渡すと「Unsupported version number [69.0]」で落ちる。
+ * 縮約も最適化もしていない（リネームのみ）ため、java.* が解決できなくても
+ * 成果物には影響しない。参照は proguard.pro の -dontwarn / -ignorewarnings で抑止する。
  */
 def javaLibraryJars() {
-    def javaHome = new File(System.getProperty('java.home'))
-    def jmods = new File(javaHome, 'jmods')
-    if (jmods.isDirectory()) {
-        def found = jmods.listFiles().findAll { it.name.endsWith('.jmod') }
-                .collect { "${it.absolutePath}(!**.jar;!module-info.class)".toString() }
-        if (!found.isEmpty()) {
-            logger.lifecycle("[MCSA] ProGuard: jmods を {} 件使います", found.size())
-            return found
-        }
-    }
-
-    def jimage = new File(new File(javaHome, 'bin'), 'jimage')
-    def extracted = layout.buildDirectory.dir('proguard-jrt').get().asFile
-    if (jimage.canExecute() && new File(extracted, 'java.base').isDirectory()) {
-        logger.lifecycle("[MCSA] ProGuard: 展開済みの jimage を使います ({})", extracted)
-        return [extracted.absolutePath]
-    }
-    if (jimage.canExecute()) {
-        logger.lifecycle("[MCSA] ProGuard: jmods がないため jimage で lib/modules を展開します")
-        extracted.mkdirs()
-        def result = providers.exec { spec ->
-            spec.commandLine jimage.absolutePath, 'extract', '--dir', extracted.absolutePath,
-                    new File(javaHome, 'lib/modules').absolutePath
-            spec.ignoreExitValue = true
-        }.result.get()
-        if (result.exitValue == 0 && new File(extracted, 'java.base').isDirectory()) {
-            return [extracted.absolutePath]
-        }
-        logger.warn("[MCSA] jimage の展開に失敗しました (exit={})", result.exitValue)
-    }
-
-    logger.warn('[MCSA] Java 標準ライブラリを ProGuard に渡せません。' +
-            'jmods を同梱する JDK でビルドしてください（-dontwarn で続行します）')
+    logger.lifecycle('[MCSA] ProGuard: ライブラリは Minecraft / Fabric のコンパイルクラスパスのみを使います' +
+            '（java.base は JDK 25 のクラスファイルを ProGuard が読めないため渡さない）')
     return []
 }
 

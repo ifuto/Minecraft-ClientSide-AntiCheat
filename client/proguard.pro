@@ -27,5 +27,7 @@
 # --- 生成された鍵素材（呼び出しは直接なので消えても困らないが念のため）---
 -keep class dev.ifuto.mcsa.client.gen.KeyMaterial { *; }
 
-# 任意依存（Iris / OptiFine はリフレクションのみ）や未解決参照の警告を潰す
+# java.base をライブラリに渡していない（JDK 25 のクラスファイルを ProGuard が読めない）ため、
+# 未解決参照の警告はすべて抑止する。リネームのみなので成果物には影響しない。
 -dontwarn **
+-ignorewarnings
