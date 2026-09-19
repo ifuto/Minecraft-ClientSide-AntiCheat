@@ -38,7 +38,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python3 tools/verify_protocol.py
+      - name: クライアント／サーバーの契約チェック
+        run: python3 tools/verify_protocol.py
+      - name: Java ソースの整合チェック
+        run: python3 tools/check_java_syntax.py
 
   client:
     name: Client MOD（Fabric）
