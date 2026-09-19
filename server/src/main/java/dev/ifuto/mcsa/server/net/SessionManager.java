@@ -390,7 +390,7 @@ public final class SessionManager implements Listener {
         if (admin == null || !admin.isOnline() || data == null) {
             return false;
         }
-        if (!admin.hasListeningPluginChannel(Wire.CH_SHOT)) {
+        if (!admin.getListeningPluginChannels().contains(Wire.CH_SHOT)) {
             return false;
         }
         int transferId = nextTransferId.getAndIncrement();

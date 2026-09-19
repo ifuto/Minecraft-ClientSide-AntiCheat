@@ -4,7 +4,7 @@ import dev.ifuto.mcsa.client.McsaClient;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.Button;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
 import java.lang.reflect.Method;
@@ -49,12 +49,16 @@ public final class ConsentScreen extends Screen {
         int buttonWidth = 170;
         int y = this.height - 30;
         int centerX = this.width / 2;
-        addDrawableChild(Button.builder(Text.literal("I Agree"), button -> agree())
+        addDrawableChild(ButtonWidget.builder(Text.literal("I Agree"), button -> agree())
                 .dimensions(centerX - buttonWidth - 4, y, buttonWidth, 20)
                 .build());
-        addDrawableChild(Button.builder(Text.literal("Decline and Quit"), button -> decline())
+        addDrawableChild(ButtonWidget.builder(Text.literal("Decline and Quit"), button -> decline())
                 .dimensions(centerX + 4, y, buttonWidth, 20)
                 .build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("\u25b2"), button -> scroll = clamp(scroll - 3))
+                .dimensions(this.width - 40, 40, 20, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("\u25bc"), button -> scroll = clamp(scroll + 3))
+                .dimensions(this.width - 40, 64, 20, 20).build());
         int usable = Math.max(1, this.height - 60);
         int visible = usable / LINE_HEIGHT;
         maxScroll = Math.max(0, lines.size() - visible);
@@ -93,25 +97,6 @@ public final class ConsentScreen extends Screen {
                     centerX, this.height - 52, 0x707070);
         }
         super.render(context, mouseX, mouseY, delta);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        scroll = clamp((int) (scroll - verticalAmount * 3));
-        return true;
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 264 || keyCode == 258) { // Down / Page Down
-            scroll = clamp(scroll + 3);
-            return true;
-        }
-        if (keyCode == 265 || keyCode == 266) { // Up / Page Up
-            scroll = clamp(scroll - 3);
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     private int clamp(int value) {
