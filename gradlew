@@ -22,7 +22,7 @@ if [ -f "$WRAPPER_JAR" ]; then
     exec java -classpath "$WRAPPER_JAR" org.gradle.wrapper.GradleWrapperMain "$@"
 fi
 
-GRADLE_VERSION=9.5.1
+GRADLE_VERSION=9.7.1
 PROPS="$APP_HOME/gradle/wrapper/gradle-wrapper.properties"
 if [ -f "$PROPS" ]; then
     detected=$(sed -nE 's#^distributionUrl=.*gradle-([0-9][0-9.]*[0-9])-(bin|all)\.zip.*#\1#p' "$PROPS" | head -n1)

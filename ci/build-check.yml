@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 env:
-  GRADLE_VERSION: "9.5.1"
+  GRADLE_VERSION: "9.7.1"
 
 jobs:
   contract:
