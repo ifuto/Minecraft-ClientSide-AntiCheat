@@ -208,7 +208,7 @@ def verifyStackMaps = { File jarFile ->
             def bytes
             try {
                 bytes = zip.getInputStream(entry).readAllBytes()
-                model = parse.invoke(classFileApi, bytes)
+                model = parse.invoke(classFileApi, [bytes] as Object[])
             } catch (Throwable t) {
                 String head = '(empty)'
                 if (bytes != null && bytes.length > 0) {
