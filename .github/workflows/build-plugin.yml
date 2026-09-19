@@ -1,0 +1,286 @@
+name: Multi Build (Paper)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mc:
+        description: "Minecraft バージョン（空欄 = リポジトリの既定値 / 最終フォールバック 1.21.11）"
+        required: false
+        default: ""
+      paper_api:
+        description: "paper-api バージョン（空欄 = <mc>-R0.1-SNAPSHOT）"
+        required: false
+        default: ""
+      api_version:
+        description: "plugin.yml / paper-plugin.yml の api-version（空欄 = mc から自動、例 1.21）"
+        required: false
+        default: ""
+      java:
+        description: "JDK バージョン（Paper 1.20.5+ は 21 必須）"
+        required: false
+        default: "21"
+      workdir:
+        description: "ビルドするサブフォルダ（空欄 = リポジトリルート）"
+        required: false
+        default: ""
+      artifact_path:
+        description: "成果物としてアップロードするパス"
+        required: false
+        default: ""
+      server_test:
+        description: "Paper サーバーを実際に起動してプラグインの Enable を確認する"
+        required: false
+        type: boolean
+        default: false
+  push:
+    paths:
+      - "trigger.md"
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: パラメータ解決
+    runs-on: ubuntu-latest
+    outputs:
+      mc: ${{ steps.p.outputs.mc }}
+      paper_api: ${{ steps.p.outputs.paper_api }}
+      api_version: ${{ steps.p.outputs.api_version }}
+      java: ${{ steps.p.outputs.java }}
+      workdir: ${{ steps.p.outputs.workdir }}
+      artifact_path: ${{ steps.p.outputs.artifact_path }}
+      server_test: ${{ steps.p.outputs.server_test }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: パラメータ決定（手動入力 > trigger.md > gradle.properties > 既定値）
+        id: p
+        env:
+          IN_MC: ${{ inputs.mc }}
+          IN_PAPER_API: ${{ inputs.paper_api }}
+          IN_API_VERSION: ${{ inputs.api_version }}
+          IN_JAVA: ${{ inputs.java }}
+          IN_WORKDIR: ${{ inputs.workdir }}
+          IN_ARTIFACT_PATH: ${{ inputs.artifact_path }}
+          IN_SERVER_TEST: ${{ inputs.server_test }}
+        run: |
+          set -euo pipefail
+
+          # gradle.properties の現在値を読む（引数: プロパティ名）
+          prop() { grep -E "^$1=" gradle.properties 2>/dev/null | head -n1 | cut -d= -f2-; }
+
+          # trigger.md の "key: value" 行を読む（なければ空文字）
+          trig() {
+            [ -f trigger.md ] || return 0
+            grep -E "^[[:space:]]*$1[[:space:]]*:" trigger.md | head -n1 \
+              | sed -E "s/^[[:space:]]*$1[[:space:]]*:[[:space:]]*//; s/[[:space:]]+$//" || true
+          }
+
+          # 優先順位付きで値を決める（$1: 手動入力 $2: trigger.md のキー $3: 既定値）
+          pick() {
+            local v="${1:-}"
+            [ -n "$v" ] || v=$(trig "$2")
+            [ -n "$v" ] || v="$3"
+            printf '%s' "$v"
+          }
+
+          MC=$(pick "$IN_MC" mc "$(prop minecraft_version)")
+          [ -n "$MC" ] || MC="1.21.11"
+
+          # paper-api は "<mc>-R0.1-SNAPSHOT" が Paper の慣例
+          PAPER_API=$(pick "$IN_PAPER_API" paper_api "$(prop paper_api_version)")
+          [ -n "$PAPER_API" ] || PAPER_API="${MC}-R0.1-SNAPSHOT"
+
+          # api-version は major.minor（1.21.11 → 1.21）。Paper は 1.21.11 のような完全表記も受け付ける
+          API_VERSION=$(pick "$IN_API_VERSION" api_version "$(prop plugin_api_version)")
+          [ -n "$API_VERSION" ] || API_VERSION=$(printf '%s' "$MC" | cut -d. -f1,2)
+
+          {
+            echo "mc=$MC"
+            echo "paper_api=$PAPER_API"
+            echo "api_version=$API_VERSION"
+            echo "java=$(pick "$IN_JAVA" java "21")"
+            echo "workdir=$(pick "$IN_WORKDIR" workdir "")"
+            echo "artifact_path=$(pick "$IN_ARTIFACT_PATH" artifact_path "build/libs/*.jar")"
+            echo "server_test=$(pick "$IN_SERVER_TEST" server_test "false")"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ビルド (paper=${{ needs.prepare.outputs.paper_api }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      MC: ${{ needs.prepare.outputs.mc }}
+      PAPER_API: ${{ needs.prepare.outputs.paper_api }}
+      API_VERSION: ${{ needs.prepare.outputs.api_version }}
+      WORKDIR: ${{ needs.prepare.outputs.workdir }}
+      ARTIFACT_PATH: ${{ needs.prepare.outputs.artifact_path }}
+      SERVER_TEST: ${{ needs.prepare.outputs.server_test }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK セットアップ
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ needs.prepare.outputs.java }}
+          cache: gradle
+
+      - name: gradle.properties にパラメータ反映
+        run: |
+          set -euo pipefail
+          DIR="."
+          if [ -n "$WORKDIR" ] && [ -f "$WORKDIR/gradle.properties" ]; then
+            DIR="$WORKDIR"
+          fi
+          cd "$DIR"
+          touch gradle.properties
+
+          put() { # $1: プロパティ名 $2: 値（空なら変更しない）
+            [ -n "$2" ] || return 0
+            if grep -q "^$1=" gradle.properties; then
+              sed -i "s|^$1=.*|$1=$2|" gradle.properties
+            else
+              echo "$1=$2" >> gradle.properties
+            fi
+          }
+          put minecraft_version   "$MC"
+          put paper_api_version   "$PAPER_API"
+          put plugin_api_version  "$API_VERSION"
+          echo "--- gradle.properties ---"
+          cat gradle.properties
+
+      - name: plugin.yml / paper-plugin.yml の api-version 更新
+        run: |
+          set -euo pipefail
+          ROOT="${WORKDIR:-.}"
+          # Gradle の processResources で ${...} 展開している場合はここで触らなくても反映される。
+          # 直書きしているリポジトリ向けに、静的な api-version 行だけ置換する。
+          find "$ROOT/src" -type f \( -name plugin.yml -o -name paper-plugin.yml \) 2>/dev/null | while read -r f; do
+            if grep -qE '^api-version:[[:space:]]*["'"'"']?[0-9]' "$f"; then
+              sed -i -E "s|^api-version:.*|api-version: \"$API_VERSION\"|" "$f"
+              echo "updated: $f"
+              grep -E '^(name|main|api-version):' "$f" || true
+            fi
+          done
+
+      - name: ビルド実行
+        run: |
+          set -o pipefail
+          if [ -n "$WORKDIR" ] && [ -x "$WORKDIR/gradlew" ]; then
+            (cd "$WORKDIR" && ./gradlew build --stacktrace) 2>&1 | tee "$WORKDIR/build-log.txt"
+          elif [ -n "$WORKDIR" ]; then
+            chmod +x gradlew
+            ./gradlew -p "$WORKDIR" build --stacktrace 2>&1 | tee build-log.txt
+          else
+            chmod +x gradlew
+            ./gradlew build --stacktrace 2>&1 | tee build-log.txt
+          fi
+
+      # --- Paper 固有: 実サーバーでの起動確認（任意） ---
+      # Paper の Fill API から該当 MC バージョンの最新ビルドを取得し、
+      # plugins/ に成果物を入れて起動 → プラグインが Enable されたかログで判定する。
+      - name: "スモークテスト: Paper サーバー起動"
+        if: env.SERVER_TEST == 'true'
+        run: |
+          set -euo pipefail
+          ROOT="${WORKDIR:-.}"
+
+          # sources / javadoc / dev などを除いたプラグイン jar を 1 つ選ぶ
+          JAR=$(ls "$ROOT"/build/libs/*.jar 2>/dev/null \
+                | grep -vE -- '-(sources|javadoc|dev|all-sources)\.jar$' | head -n1 || true)
+          if [ -z "$JAR" ]; then
+            echo "::warning::プラグイン jar が見つからないためスモークテストをスキップします"
+            exit 0
+          fi
+
+          mkdir -p server/plugins && cp "$JAR" server/plugins/
+          cd server
+
+          # Fill API v3: ビルド一覧から最新ビルドの server ダウンロード URL を取る
+          URL=$(curl -fsSL "https://fill.papermc.io/v3/projects/paper/versions/${MC}/builds" \
+                | jq -r '.[0].downloads["server:default"].url')
+          echo "download: $URL"
+          curl -fsSL -o paper.jar "$URL"
+
+          echo "eula=true" > eula.txt
+          # ワールド生成を軽くする
+          printf 'level-type=minecraft\\:flat\nonline-mode=false\nspawn-protection=0\nview-distance=3\n' > server.properties
+
+          # 90 秒以内に起動できたら stop を送って終了。Done が出なければ timeout
+          ( sleep 5; for i in $(seq 1 85); do
+              grep -q 'Done (' server-log.txt 2>/dev/null && { echo stop; exit 0; }
+              sleep 1
+            done; echo stop ) \
+          | timeout 150 java -Xms512M -Xmx1G -jar paper.jar --nogui 2>&1 | tee server-log.txt || true
+
+          echo "--- plugin related lines ---"
+          grep -iE 'Enabling|Disabling|Error occurred|Could not load|ambiguous|UnsupportedClassVersion|api-version' server-log.txt || true
+
+          if ! grep -q 'Done (' server-log.txt; then
+            echo "::error::Paper サーバーが起動完了 (Done) に到達しませんでした"
+            exit 1
+          fi
+          if grep -qE "Error occurred while enabling|Could not load 'plugins/" server-log.txt; then
+            echo "::error::プラグインの読み込み/Enable に失敗しました（server/server-log.txt を確認）"
+            exit 1
+          fi
+          if ! grep -qE '\[.*\] Enabling ' server-log.txt; then
+            echo "::warning::プラグインの Enabling ログが確認できませんでした"
+          fi
+      # --- スモークテストここまで ---
+
+      # 失敗時、エラー抜粋を「チェックアノテーション」に乗せる。
+      # アノテーションは GitHub Checks API から普通に取得できるので、
+      # Azure blob 経由でしか読めない生ログの代替になる。
+      - name: "失敗時: エラーをアノテーション化"
+        if: failure()
+        run: |
+          # ログ本体を探す（ビルドログ → サーバーログ）
+          LOG=""
+          for c in "${WORKDIR:+$WORKDIR/}build-log.txt" build-log.txt server/server-log.txt; do
+            [ -n "$c" ] && [ -f "$c" ] && LOG="$c" && break
+          done
+
+          # workflow command の特殊文字エスケープ
+          esc() { local s="$1"; s="${s//%/%25}"; s="${s//$'\r'/%0D}"; s="${s//$'\n'/%0A}"; printf '%s' "$s"; }
+
+          # 1行を javac 風に分解できれば file/line 付きで、無理なら文ごとただの error で出す
+          emit() {
+            local l="$1"
+            if [[ "$l" =~ (.*\.(java|kt)):([0-9]+):[0-9]*:?\ ?e(rror)?:\ (.*) ]]; then
+              local f="${BASH_REMATCH[1]#"$GITHUB_WORKSPACE/"}"
+              echo "::error file=$f,line=${BASH_REMATCH[3]}::$(esc "${BASH_REMATCH[5]}")"
+            else
+              echo "::error::$(esc "$l")"
+            fi
+          }
+
+          if [ -z "$LOG" ]; then
+            echo "::error::build-log.txt が見つかりません"
+            exit 0
+          fi
+
+          # まずエラーっぽい行を最大30件拾う。1件も無ければ末尾30行を代わりに出す
+          PAT="error:|FAILED|Caused by|Exception|Could not resolve|Error occurred while enabling|Could not load 'plugins/"
+          if grep -aqE "$PAT" "$LOG"; then
+            grep -aE "$PAT" "$LOG" | head -30 | while IFS= read -r l; do emit "$l"; done
+          else
+            tail -30 "$LOG" | while IFS= read -r l; do emit "$l"; done
+          fi
+
+          # 人間向け: ブラウザの Summary にも末尾を貼る
+          { echo "### $LOG (tail)"; echo '```'; tail -300 "$LOG"; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: 成果物アップロード
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: multi-build-paper-${{ github.run_number }}
+          path: |
+            ${{ env.ARTIFACT_PATH }}
+            **/build-log.txt
+            server/server-log.txt
+            server/logs/latest.log
+          if-no-files-found: warn
