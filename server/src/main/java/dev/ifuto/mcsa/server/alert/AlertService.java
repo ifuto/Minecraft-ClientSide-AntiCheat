@@ -71,6 +71,39 @@ public final class AlertService {
         }
     }
 
+    /**
+     * 実行時の状態変化（ダイジェスト）など、単独では確定できないが無視したくない通知。
+     * コンソール＋OP へのブロードキャスト＋Webhook に出す。
+     */
+    public void warn(Player player, String message) {
+        String text = "[MCSA] " + player.getName() + " " + message;
+        if (plugin.config().alertConsole) {
+            plugin.getLogger().warning(text);
+        }
+        if (plugin.config().alertBroadcast) {
+            broadcast(Component.text("[MCSA] ", NamedTextColor.GOLD)
+                    .append(Component.text(player.getName() + " ", NamedTextColor.YELLOW))
+                    .append(Component.text(message, NamedTextColor.RED)));
+        }
+        webhook(text);
+    }
+
+    /**
+     * 証拠（画面 / テキスト）を受信した通知。
+     *
+     * <p>監査のためコンソールには<b>必ず</b>残す（{@code alerts.console} に従わない）。
+     * ブロードキャストには保存先だけを出し、画像そのものは流さない。
+     */
+    public void evidence(Player player, String message) {
+        plugin.getLogger().info("[MCSA/evidence] " + player.getName() + " " + message);
+        if (plugin.config().evidenceNotify) {
+            broadcast(Component.text("[MCSA/証拠] ", NamedTextColor.GOLD)
+                    .append(Component.text(player.getName() + " ", NamedTextColor.YELLOW))
+                    .append(Component.text(message, NamedTextColor.AQUA)));
+        }
+        webhook("[MCSA/evidence] " + player.getName() + " " + message);
+    }
+
     private void broadcast(Component message) {
         String permission = plugin.config().alertPermission;
         for (Player online : Bukkit.getOnlinePlayers()) {

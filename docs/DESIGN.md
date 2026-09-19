@@ -95,9 +95,15 @@ Bukkit 側の `Player#getListeningPluginChannels()`（＝クライアントが�
 | シェーダー     | Iris / OptiFine の種別・パック名・適用中か、`shaderpacks/` の中身     |
 | 自己整合性     | 自分自身の jar の SHA-256、jar 内エントリの指紋、難読化ビルドか       |
 | 実行時プローブ | `-javaagent` 等の JVM 引数、デバッガ、クラスローダ名、指定クラスの存在 |
+| 注入の痕跡     | Mixin 設定名の一覧と出所、ゲームプレイ関連クラスへの注入痕跡、怪しいスレッド名、クラスローダの連鎖 |
+| ライブラリ名   | いま読み込んでいる jar のファイル名と件数（`KnotClassLoader#getURLs` + `java.class.path` + `jdk.module.path`） |
+| jar の中身     | classpath 上の jar のエントリ名のうち、検知候補に一致したクラス名（**ロードしない**ので重い処理ではない） |
+| 常時監視       | 起動時の基準値と現在の状態の差分（ダイジェスト 16 文字＋変化項目） |
 
-**やらないこと**: プロセス一覧の読み取り、スクリーンショット、キー入力・クリップボードの監視、
-`~/.minecraft` 以外のファイルアクセス。詳細は [`PRIVACY.md`](PRIVACY.md)。
+**やらないこと**: プロセス一覧の読み取り、キー入力・クリップボードの監視、
+`~/.minecraft` 以外のファイルアクセス。
+**画面の取得は OP の指示があったときだけ**（既定は無効。対象には何も表示しない）。
+詳細は [`PRIVACY.md`](PRIVACY.md)。
 
 ---
 
@@ -116,6 +122,9 @@ Bukkit 側の `Player#getListeningPluginChannels()`（＝クライアントが�
 | 6 | id と中身の突き合わせ                        | **MOD 名の偽装**（`fabric.mod.json` の id 詐称） | 本物の MOD に細工を混ぜる             |
 | 7 | `mods/` の実ファイル走査                     | MOD ローダに姿を見せない jar（manifest なし） | `mods/` 以外から注入する               |
 | 8 | 実行時プローブ（サーバー指定クラス探索）      | javaagent / 注入系のチートクライアント       | クラス名を変える（サーバー側で追随できる） |
+| 8b| Mixin 設定の出所照合                          | Mixin による介入（チートの主流）             | 正規 MOD の設定名を騙る（fabric.mod.json と突き合わせる） |
+| 8c| ライブラリ名・jar の中身の走査                | MOD として登録されない注入 jar               | 名前と中身を作り替える（手間が跳ね上がる） |
+| 8d| 常時監視（ウォッチドッグ）                    | **起動時だけ正常な顔をする**タイプ            | 常時きれいに保つ（＝常時チートを切る＝使えない） |
 | 9 | 行動検知（サーバー権限）                      | 上記すべてを突破した相手                     | **原理的にごまかせない**（値を偽装すればするほど検知される） |
 
 ### 5.1 MOD 名の偽装をどう捕まえるか
@@ -149,6 +158,86 @@ Bukkit 側の `Player#getListeningPluginChannels()`（＝クライアントが�
 という割り切りにしている。
 
 ---
+
+### 5.3 注入（Mixin / agent）をどう捕まえるか
+
+**前提**: Fabric 自身が Mixin を使っている。だから「Mixin が入っている」は
+何の証拠にもならない。証拠になるのは次の 2 つ。
+
+1. **出所不明の Mixin 設定**
+   Mixin には登録された設定ファイル名の一覧が取れる（`Mixins.getConfigurations()`）。
+   これを **インストール済み MOD が `fabric.mod.json` で宣言している設定名** と突き合わせ、
+   どちらにも属さないものを `MIXIN_UNKNOWN_CONFIG` として報告する。
+   チートクライアントは `mixins.meteorclient.json` のような名前を使うので、
+   MOD 一覧に現れなくてもここで引っかかる。
+2. **ゲームプレイ関連クラスへの注入痕跡**
+   `MinecraftClient` / プレイヤー / ワールド / インタラクションマネージャの
+   クラス階層を辿り、合成メソッド（`$handler$...` など）を数える。
+   Fabric API も注入するので **これ単体では判定に使わない**。
+   サーバー側で「出所不明の設定 ≥1 かつ 注入痕跡 ≥ `injection.injected-member-threshold`」
+   のときに `MIXIN_INJECTION_SUSPECTED`（critical）を立てる。
+
+これに加えて、javaagent 系は次の 4 面で見る。
+
+| 観測 | 何を見つけるか |
+|------|----------------|
+| JVM 引数（`-javaagent` / `-agentlib` / `-xbootclasspath`） | 起動時に注入するタイプ |
+| `sun.instrument.InstrumentationImpl` のロード有無 | 実行中に attach された痕跡 |
+| スレッド名（`retransform` / `agent` / `hook` 等） | 注入ツールのワーカースレッド |
+| クラスローダの連鎖 | Fabric の Knot 以外が混ざっている／そもそも Fabric で動いていない |
+
+### 5.4 検知候補は動的（クライアントの再配布が不要）
+
+新しいチートが出るたびに MOD を配り直すのは現実的でない。そこで検知候補は
+**サーバーが実行時に配る**。`/ac policy probe add <pattern>` 1 行で全クライアントに反映される。
+
+| 書き方 | 何をするか |
+|--------|-----------|
+| `完全一致` | `Class.forName` で存在確認（ロード済みなら分かる） |
+| `prefix:` / `contains:` / `regex:` | jar のエントリ名を走査して照合（**ロードされていなくても**見つかる） |
+| `class:<上記>` | 同上（jar 走査向けの明示指定） |
+| `lib:<上記>` | 読み込み中のライブラリ名（jar 名）を照合 |
+
+「起動時だけ動いて、その後クラスを消す」タイプは `Class.forName` では見えないが、
+jar の中身を見るので取りこぼさない。逆に「jar を消してメモリだけに載せる」タイプは
+`Class.forName` と Mixin 設定の照合で捕まえる。**どちらか片方だけでは抜けるので両方やる。**
+
+### 5.5 「起動時だけ綺麗」を潰す（2 段階認証的な常時監視）
+
+1 回の検査を通るだけなら、検査の瞬間だけ真面目にしておけばいい。
+そこで **通し続けることを条件にする**。
+
+```
+起動 ──▶ 基準値を記録
+        │
+        ├──(45±20% 秒ごと)──▶ 状態を再計算 ──▶ mcsa:digest（16 文字のハッシュ＋変化フラグ）
+        │                                          │
+        │                        サーバー ─────────┤ 変化フラグ ≠ 0 → アラート＋再チャレンジ
+        │                                          └ 180 秒届かない → WATCHDOG_SILENT
+        └── OP の /ac watch ──▶ 間隔を 20 秒に詰める＋定期的に画面取得
+```
+
+- 送るのは 16 文字のハッシュだけ（中身は送らない）。変わったときだけ次のレポートで詳細を送る。
+- 比較するのは「自分の jar のハッシュ」「Mixin 設定の一覧」「読み込み中ライブラリ」
+  「クラスローダの連鎖」「検知対象クラスの存在」。
+- **送ってこなくなったこと自体が証拠**になる（MOD を殺した／フックして黙らせた）。
+- `/ac scan <player>` は nonce を新しくして申告し直させるので、録画したレポートを使い回せない。
+
+### 5.6 証拠（画面の取得）
+
+`/ac shot <player> [reason]` → `mcsa:task (CAPTURE)` → クライアントが
+フレームバッファを直接読んで PNG/JPEG を作り、`mcsa:evidence` で分割送信する。
+
+- **対象プレイヤーの画面には何も表示しない。** バニラのスクリーンショット機能は
+  必ずチャットに出るので使わず、`glReadPixels` で読んでメモリ上で符号化する。
+  一時ファイルも作らない。理由は「撮られた」と分かって抜けるのを防ぐため。
+- 送信前に HMAC-SHA256（`nonce ‖ data`）を付け、サーバーは一致したものだけ採用する
+  （不一致でも保存はするが `hmacValid=false` を記録してアラートを出す）。
+- 保存先は `plugins/MCSA/evidence/<player>-<uuid8>/`。同じ場所に `.json` の sidecar
+  （誰が・いつ・なぜ・SHA-256・HMAC 検証結果）と、追記専用の監査ログ
+  `evidence-log.txt` を置く。OP 権限の悪用もこれで追える。
+- **既定は無効**（`evidence.capture.enabled: false`）。有効化するには
+  サーバールールでの告知が前提（[`PRIVACY.md`](PRIVACY.md)）。
 
 ## 6. 行動検知（サーバー側）
 
@@ -190,6 +279,17 @@ Bukkit 側の `Player#getListeningPluginChannels()`（＝クライアントが�
 | `UNKNOWN_MOD:<id>`        |      | どのリストにもない（`flag-unknown-mods` 有効時）  |
 | `JAR_NOT_LOADED:<f>`      |      | `mods/` にあるのに読み込まれていない              |
 | `ODD_CLASSPATH:<jar>`     |      | クラスパスに注入系の名前の jar                    |
+| `MIXIN_UNKNOWN_CONFIG:<n>`| ★    | インストール済み MOD に属さない Mixin 設定         |
+| `MIXIN_INJECTION_SUSPECTED`| ★   | 出所不明の Mixin 設定＋注入痕跡の組み合わせ        |
+| `CHEAT_CLASS_IN_JAR:<c>`  | ★    | jar の中に検知対象のクラスを見つけた              |
+| `CHEAT_CLASS_LOADED:<c>`  | ★    | サーバー指定のクラスがロードされている            |
+| `LIBRARY_SUSPICIOUS:<j>`  |      | 怪しい名前のライブラリを読み込んでいる（既定は非重大） |
+| `SUSPICIOUS_THREAD:<n>`   | ★    | 怪しい名前のスレッドが動いている                  |
+| `CLASSLOADER_ODD:<n>`     | ★    | Fabric 以外のクラスローダが混ざっている            |
+| `STATE_CHANGED:<what>`    | ★    | ウォッチドッグが起動時との差分を検出              |
+| `WATCHDOG_SILENT`         | ★    | 状態ダイジェストが途絶えた（MOD を殺された疑い）   |
+| `CLIENT_TAMPERED_RUNTIME` | ★    | 実行中に自分の jar が変わった                     |
+| `EVIDENCE_HMAC_INVALID`   | ★    | 証拠の HMAC が一致しなかった                      |
 
 ---
 
@@ -201,8 +301,9 @@ client/                        Fabric MOD
     McsaClient.java            エントリーポイント
     McsaConfig.java            config/mcsa/client.json
     net/                       ペイロード定義とハンドシェイク
-    collect/                   MOD / パック / シェーダーの収集
-    integrity/                 自己整合性と実行時プローブ
+    collect/                   MOD / パック / シェーダー / ライブラリ / jar の中身の収集
+    integrity/                 自己整合性・実行時プローブ・注入検知・常時監視
+    capture/SilentCapture.java 画面の取得（対象には表示しない）
     crypto/Signer.java         HMAC
     gen/KeyMaterial.java       ビルド時に生成（Git に入れない）
   build.gradle                 鍵生成タスク + ProGuard タスク
@@ -214,11 +315,14 @@ server/                        Paper プラグイン
     McsaConfig.java            config.yml / pins.yml
     net/                       Wire（通信）/ Session / SessionManager / ReportListener
     report/                    ClientReport / ReportStore
-    policy/ModPolicy.java      照合と判定
+    policy/ModPolicy.java      MOD の照合と判定
+    policy/InjectionPolicy.java 注入系の finding をフラグに変換
+    evidence/EvidenceStore.java 証拠（画面）の保存と監査ログ
     check/                     行動検知
     alert/AlertService.java    コンソール / OP / Webhook
     command/AcCommand.java     /ac
 
+admin/                         OP 用クライアント MOD（/acadmin でサーバーの /ac を実行）
 tools/verify_protocol.py       両側の契約（チャンネル名・JSON キー・config キー）の整合チェック
 ci/build-check.yml             追加の CI（.github/workflows/ にコピーして使う）
 docs/                          このドキュメント群
@@ -230,6 +334,10 @@ docs/                          このドキュメント群
 
 - [ ] リソースパックの中身の検査（X-ray テクスチャの検出）
 - [ ] `PacketOrder` / `BadPackets` 系の検知（Paper API では限界があるので ProtocolLib 連携）
+- [x] 注入（Mixin / javaagent / ライブラリ名 / jar の中身）の検知
+- [x] 常時監視（ウォッチドッグ）で「起動時だけ綺麗」を潰す
+- [x] 証拠の取得（画面）と監査ログ
+- [x] OP 用クライアント MOD（`admin/`）
 - [ ] クライアントの設定 GUI（Mod Menu 連携）
 - [ ] Web UI（レポートの履歴と差分）
 - [ ] ベッドロック／プロキシ（Velocity）対応

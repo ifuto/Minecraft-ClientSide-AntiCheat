@@ -322,7 +322,8 @@ public final class CheckManager implements Listener {
             }
             BoundingBox box = entity.getBoundingBox();
             if (box.getMaxY() >= feet.getY() - 0.35 && box.getMaxY() <= feet.getY() + 0.35
-                    && box.containsXZ(feet.getX(), feet.getZ())) {
+                    && feet.getX() >= box.getMinX() && feet.getX() <= box.getMaxX()
+                    && feet.getZ() >= box.getMinZ() && feet.getZ() <= box.getMaxZ()) {
                 return true;
             }
         }

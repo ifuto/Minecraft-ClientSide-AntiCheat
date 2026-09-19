@@ -7,6 +7,7 @@ import dev.ifuto.mcsa.server.McsaConfig;
 import dev.ifuto.mcsa.server.McsaPlugin;
 import dev.ifuto.mcsa.server.alert.AlertService;
 import dev.ifuto.mcsa.server.net.Session;
+import dev.ifuto.mcsa.server.net.Wire;
 import dev.ifuto.mcsa.server.report.ClientReport;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -19,7 +20,9 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -54,6 +57,10 @@ public final class AcCommand implements CommandExecutor, TabCompleter {
             case "shaders" -> shaders(sender, args);
             case "flags" -> flags(sender, args);
             case "refresh" -> refresh(sender, args);
+            case "scan" -> scan(sender, args);
+            case "shot" -> shot(sender, args);
+            case "watch" -> watch(sender, args);
+            case "evidence" -> evidence(sender, args);
             case "kick" -> kick(sender, args);
             case "policy" -> policy(sender, args);
             case "reload" -> reload(sender);
@@ -129,10 +136,26 @@ public final class AcCommand implements CommandExecutor, TabCompleter {
                 NamedTextColor.GRAY));
         sender.sendMessage(kv("MOD / パック / シェーダー", report.modCount() + " / "
                 + report.resourcePacks().size() + " / " + shaderLabel(report), NamedTextColor.GRAY));
+        sender.sendMessage(kv("注入観測", plugin.injectionPolicy().summarize(report),
+                report.findings().isEmpty() ? NamedTextColor.GREEN : NamedTextColor.YELLOW));
         sender.sendMessage(kv("フラグ", report.flagSummary(),
                 report.hasCritical() ? NamedTextColor.RED : (report.flags().isEmpty() ? NamedTextColor.GREEN : NamedTextColor.YELLOW)));
         if (!report.redacted().isEmpty()) {
             sender.sendMessage(kv("送信拒否", String.join(", ", report.redacted()), NamedTextColor.RED));
+        }
+        if (session != null) {
+            long age = session.lastDigestAt() == 0 ? -1
+                    : (System.currentTimeMillis() - session.lastDigestAt()) / 1000;
+            sender.sendMessage(kv("常時監視", age < 0 ? "ダイジェスト未受信（MOD が古い可能性）"
+                            : age + " 秒前 (seq=" + session.digestSeq() + ", state=" + session.lastStateHex() + ")",
+                    age < 0 ? NamedTextColor.YELLOW : (age > plugin.config().watchdogTimeoutSeconds
+                            ? NamedTextColor.RED : NamedTextColor.GREEN)));
+            sender.sendMessage(kv("画面取得", (plugin.config().captureEnabled ? "サーバー許可" : "サーバー禁止")
+                            + " / " + (session.captureSupported() ? "クライアント対応" : "クライアント未対応"),
+                    plugin.config().captureEnabled ? NamedTextColor.GREEN : NamedTextColor.GRAY));
+            if (!session.runtimeFlags().isEmpty()) {
+                sender.sendMessage(kv("実行時変化", String.join(", ", session.runtimeFlags()), NamedTextColor.RED));
+            }
         }
         Map<String, Integer> violations = plugin.checks().violations(target);
         if (!violations.isEmpty()) {
@@ -292,6 +315,76 @@ public final class AcCommand implements CommandExecutor, TabCompleter {
         } else {
             sender.sendMessage(text(" 送信に失敗しました（プレイヤーがオフラインです）", NamedTextColor.RED));
         }
+    }
+
+    /** 新しい nonce で環境を申告し直させる（起動時だけ正常な顔をする対策） */
+    private void scan(CommandSender sender, String[] args) {
+        Player target = target(sender, args, 1);
+        if (target == null) {
+            return;
+        }
+        boolean sent = plugin.sessions().sendTask(target, Wire.TASK_RESCAN, "rescan", 0, sender.getName());
+        sender.sendMessage(sent
+                ? text(" " + target.getName() + " に再申告を指示しました（新しい nonce で再収集します）", NamedTextColor.GREEN)
+                : text(" 指示を送れませんでした（オフラインです）", NamedTextColor.RED));
+    }
+
+    /** 画面を取得する（対象には何も表示されない） */
+    private void shot(CommandSender sender, String[] args) {
+        Player target = target(sender, args, 1);
+        if (target == null) {
+            return;
+        }
+        String reason = args.length > 2 ? String.join(" ", Arrays.copyOfRange(args, 2, args.length)) : "";
+        String message = plugin.sessions().requestCapture(target, reason, sender.getName());
+        boolean ok = message.startsWith("要求しました");
+        sender.sendMessage(text(" " + message, ok ? NamedTextColor.GREEN : NamedTextColor.YELLOW));
+    }
+
+    /** 監視モード（高頻度のダイジェスト＋定期的な画面取得） */
+    private void watch(CommandSender sender, String[] args) {
+        Player target = target(sender, args, 1);
+        if (target == null) {
+            return;
+        }
+        if (args.length < 3) {
+            sender.sendMessage(text(" /ac watch <player> <seconds|off>", NamedTextColor.RED));
+            return;
+        }
+        if (args[2].equalsIgnoreCase("off")) {
+            sender.sendMessage(text(" " + plugin.sessions().stopWatch(target, sender.getName()), NamedTextColor.GREEN));
+            return;
+        }
+        int seconds;
+        try {
+            seconds = Integer.parseInt(args[2]);
+        } catch (NumberFormatException e) {
+            sender.sendMessage(text(" 秒数を指定してください: /ac watch <player> <seconds|off>", NamedTextColor.RED));
+            return;
+        }
+        sender.sendMessage(text(" " + plugin.sessions().startWatch(target, seconds, sender.getName()),
+                NamedTextColor.GREEN));
+    }
+
+    /** 保存済みの証拠を一覧する */
+    private void evidence(CommandSender sender, String[] args) {
+        Player target = target(sender, args, 1);
+        if (target == null) {
+            return;
+        }
+        List<Path> files = plugin.evidence().list(target, 20);
+        sender.sendMessage(header(target.getName() + " の証拠 (" + files.size() + " 件 / 最大20件表示)"));
+        if (files.isEmpty()) {
+            sender.sendMessage(text(" 保存された証拠はありません。/ac shot " + target.getName()
+                    + " で画面を取得できます（evidence.capture.enabled=true が必要）。", NamedTextColor.GRAY));
+            return;
+        }
+        for (Path file : files) {
+            sender.sendMessage(text(" " + file, NamedTextColor.AQUA));
+        }
+        sender.sendMessage(text(" 保存先: " + plugin.evidence().root(), NamedTextColor.GRAY));
+        sender.sendMessage(text(" 監査ログ: " + plugin.evidence().root().resolve("evidence-log.txt"),
+                NamedTextColor.GRAY));
     }
 
     private void kick(CommandSender sender, String[] args) {
@@ -466,6 +559,11 @@ public final class AcCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(text(" /" + label + " shaders <player> … シェーダー一覧", NamedTextColor.GRAY));
         sender.sendMessage(text(" /" + label + " flags <player> … 検知履歴", NamedTextColor.GRAY));
         sender.sendMessage(text(" /" + label + " refresh <player> … レポート再要求", NamedTextColor.GRAY));
+        sender.sendMessage(text(" /" + label + " scan <player> … 新しい nonce で再申告させる", NamedTextColor.GRAY));
+        sender.sendMessage(text(" /" + label + " shot <player> [reason] … 画面を取得（対象には表示されない）",
+                NamedTextColor.GRAY));
+        sender.sendMessage(text(" /" + label + " watch <player> <seconds|off> … 高頻度監視", NamedTextColor.GRAY));
+        sender.sendMessage(text(" /" + label + " evidence <player> … 保存済みの証拠", NamedTextColor.GRAY));
         sender.sendMessage(text(" /" + label + " kick <player> [reason]", NamedTextColor.GRAY));
         sender.sendMessage(text(" /" + label + " policy … 導入必須・ピン留め・探索クラス", NamedTextColor.GRAY));
         sender.sendMessage(text(" /" + label + " reload", NamedTextColor.GRAY));
@@ -564,8 +662,8 @@ public final class AcCommand implements CommandExecutor, TabCompleter {
             return Collections.emptyList();
         }
         if (args.length == 1) {
-            return filter(List.of("status", "info", "mods", "packs", "shaders", "flags", "refresh", "kick",
-                    "policy", "reload"), args[0]);
+            return filter(List.of("status", "info", "mods", "packs", "shaders", "flags", "refresh", "scan",
+                    "shot", "watch", "evidence", "kick", "policy", "reload"), args[0]);
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
         if (args.length == 2) {
@@ -598,6 +696,9 @@ public final class AcCommand implements CommandExecutor, TabCompleter {
                 return players(args[2]);
             }
         }
+        if (args.length == 3 && sub.equals("watch")) {
+            return filter(List.of("off", "60", "300", "600"), args[2]);
+        }
         if (args.length == 4 && sub.equals("policy") && args[1].equalsIgnoreCase("require")) {
             return players(args[3]);
         }
@@ -606,7 +707,8 @@ public final class AcCommand implements CommandExecutor, TabCompleter {
 
     private static boolean needsPlayer(String sub) {
         return switch (sub) {
-            case "info", "mods", "packs", "shaders", "flags", "refresh", "kick" -> true;
+            case "info", "mods", "packs", "shaders", "flags", "refresh", "scan", "shot", "watch",
+                    "evidence", "kick" -> true;
             default -> false;
         };
     }

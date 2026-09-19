@@ -134,6 +134,20 @@ public final class ClientReport {
         return array("shaderPackFiles");
     }
 
+    /** クライアントが観測した「引っかかったもの」の一覧（{@code CODE:詳細}） */
+    public List<String> findings() {
+        List<String> out = new ArrayList<>();
+        JsonElement element = probes().get("findings");
+        if (element != null && element.isJsonArray()) {
+            for (JsonElement item : element.getAsJsonArray()) {
+                if (item != null && item.isJsonPrimitive()) {
+                    out.add(item.getAsString());
+                }
+            }
+        }
+        return out;
+    }
+
     public List<String> redacted() {
         List<String> out = new ArrayList<>();
         for (JsonElement element : array("redacted")) {

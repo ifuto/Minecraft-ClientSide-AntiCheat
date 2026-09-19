@@ -43,6 +43,7 @@ public final class SelfIntegrity {
     private static String jarSha256 = "";
     private static String entryFingerprint = "";
     private static boolean selfCheckOk;
+    private static boolean runtimeTampered;
 
     private SelfIntegrity() {
     }
@@ -55,6 +56,36 @@ public final class SelfIntegrity {
     public static synchronized String jarSha256() {
         compute();
         return jarSha256;
+    }
+
+    /**
+     * 実行時にもう一度計算し直す（ウォッチドッグ用）。
+     *
+     * <p>起動時に一度だけ見て「はい正常です」で終わらせると、
+     * 起動後に jar を差し替える／クラスを注入する手口を取りこぼす。
+     * 値が変わっていたら true を返し、以降のレポートに
+     * {@code self.runtimeTampered=true} として載せる。
+     *
+     * @return 起動時の値と違ったか
+     */
+    public static synchronized boolean reverify() {
+        if (!computed) {
+            compute();
+            return false;
+        }
+        String previousHash = jarSha256;
+        String previousFingerprint = entryFingerprint;
+        computed = false;
+        compute();
+        boolean changed = !previousHash.equals(jarSha256) || !previousFingerprint.equals(entryFingerprint);
+        if (changed) {
+            runtimeTampered = true;
+        }
+        return changed;
+    }
+
+    public static synchronized boolean runtimeTampered() {
+        return runtimeTampered;
     }
 
     public static boolean isObfuscatedBuild() {
@@ -74,6 +105,7 @@ public final class SelfIntegrity {
         self.addProperty("jarSha256", jarSha256);
         self.addProperty("entryFingerprint", entryFingerprint);
         self.addProperty("obfuscated", isObfuscatedBuild());
+        self.addProperty("runtimeTampered", runtimeTampered);
         self.addProperty("className", SelfIntegrity.class.getName());
         root.add("self", self);
     }

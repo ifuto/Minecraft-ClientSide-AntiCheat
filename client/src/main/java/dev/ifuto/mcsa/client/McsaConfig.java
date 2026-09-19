@@ -47,6 +47,31 @@ public final class McsaConfig {
     /** 初回申告時にチャットへ告知を出す */
     public boolean chatNotice = true;
 
+    /** 注入（Mixin / agent / ライブラリ名 / jar の中身）の観測をする */
+    public boolean collectInjection = true;
+    /** 出所が分かっている Mixin 設定名（誤検知を減らすための許可リスト） */
+    public List<String> knownMixinConfigs = new ArrayList<>();
+    /** 怪しいとみなすライブラリ名のパターン（{@code contains:} / {@code prefix:} / {@code regex:}） */
+    public List<String> suspiciousLibraryPatterns = new ArrayList<>();
+    /** 追加で探すクラス名パターン（サーバー指定と同じ書式） */
+    public List<String> extraClassPatterns = new ArrayList<>();
+
+    /** 常時監視（ウォッチドッグ）の間隔（秒）。0 で停止 */
+    public int watchdogIntervalSeconds = 45;
+
+    /** サーバーからの画面取得の指示を受け付ける */
+    public boolean allowCapture = true;
+    /** 画像形式: PNG / JPEG */
+    public String captureFormat = "PNG";
+    /** JPEG の品質（0.2〜1.0） */
+    public float captureQuality = 0.8f;
+    /** 横幅がこれを超えたら縮小する（0 で無効） */
+    public int captureMaxWidth = 1600;
+    /** これを超えたら縮小して JPEG で送り直す（0 で無効） */
+    public int captureMaxBytes = 6 * 1024 * 1024;
+    /** 送信したことをログに残す（既定は残さない＝対象に痕跡を見せない） */
+    public boolean captureLog = false;
+
     private static McsaConfig instance;
 
     public static McsaConfig get() {
@@ -79,6 +104,18 @@ public final class McsaConfig {
         }
         if (instance.allowedServers == null) {
             instance.allowedServers = new ArrayList<>();
+        }
+        if (instance.knownMixinConfigs == null) {
+            instance.knownMixinConfigs = new ArrayList<>();
+        }
+        if (instance.suspiciousLibraryPatterns == null) {
+            instance.suspiciousLibraryPatterns = new ArrayList<>();
+        }
+        if (instance.extraClassPatterns == null) {
+            instance.extraClassPatterns = new ArrayList<>();
+        }
+        if (instance.captureFormat == null || instance.captureFormat.isBlank()) {
+            instance.captureFormat = "PNG";
         }
         instance.save();
     }

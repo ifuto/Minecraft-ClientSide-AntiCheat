@@ -5,8 +5,10 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.ifuto.mcsa.client.McsaClient;
 import dev.ifuto.mcsa.client.McsaConfig;
+import dev.ifuto.mcsa.client.integrity.Findings;
 import dev.ifuto.mcsa.client.integrity.RuntimeProbes;
 import dev.ifuto.mcsa.client.integrity.SelfIntegrity;
+import dev.ifuto.mcsa.client.integrity.Watchdog;
 import dev.ifuto.mcsa.client.net.ChallengePayload;
 import dev.ifuto.mcsa.client.net.Handshake;
 import net.fabricmc.loader.api.FabricLoader;
@@ -75,6 +77,9 @@ public final class ReportBuilder {
         if (!config.collectJvmArgs) {
             redacted.add("jvmArgs");
         }
+        if (!config.collectInjection) {
+            redacted.add("injection");
+        }
         root.add("redacted", redacted);
 
         if (config.collectMods && wants(requested, ChallengePayload.FLAG_MODS)) {
@@ -86,8 +91,24 @@ public final class ReportBuilder {
         if (config.collectShaderPacks && wants(requested, ChallengePayload.FLAG_SHADER_PACKS)) {
             ShaderScanner.collect(root, config);
         }
-        RuntimeProbes.collect(root, config, challenge.probeClasses(),
-                wants(requested, ChallengePayload.FLAG_JVM_ARGS));
+        Findings findings = new Findings();
+        if (config.collectInjection) {
+            RuntimeProbes.collect(root, config, challenge.probeClasses(),
+                    wants(requested, ChallengePayload.FLAG_JVM_ARGS), findings);
+        }
+
+        // ウォッチドッグが起動時から溜めこんでいる変化も同じ findings に混ぜる
+        for (String change : Watchdog.changes().list()) {
+            findings.add(change);
+        }
+        JsonObject probes = root.getAsJsonObject("probes");
+        if (probes == null) {
+            probes = new JsonObject();
+            root.add("probes", probes);
+        }
+        probes.add("findings", findings.toJson());
+        probes.addProperty("findingCount", findings.size());
+        probes.addProperty("findingDropped", findings.dropped());
 
         // 自己整合性は必ず送る（サーバが「この jar は改変されている」と照合するため）
         SelfIntegrity.write(root);

@@ -21,6 +21,7 @@ public final class Handshake {
     }
 
     public static void onChallenge(ChallengePayload challenge) {
+        ClientSession.onChallenge(challenge);
         MinecraftClient client = MinecraftClient.getInstance();
         String address = currentServerAddress(client);
         McsaConfig config = McsaConfig.get();

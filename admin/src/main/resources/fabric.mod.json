@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "mcsa-admin",
+  "version": "${version}",
+  "name": "MCSA Admin Console",
+  "description": "MCSA サーバープラグインの OP 用クライアントMOD。自分のクライアントから /acadmin で調査コマンドを実行できます（サーバー側で mcsa.admin 権限が必要）。",
+  "authors": [
+    "ifuto"
+  ],
+  "contact": {
+    "sources": "https://github.com/ifuto/Minecraft-ClientSide-AntiCheat"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.ifuto.mcsa.admin.McsaAdmin"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

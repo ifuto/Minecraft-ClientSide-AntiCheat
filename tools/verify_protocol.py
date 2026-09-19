@@ -7,7 +7,7 @@ CI の実ビルド（.github/workflows/build-check.yml）と合わせて使う�
     python3 tools/verify_protocol.py
 
 チェック内容:
-  1. プラグインメッセージのチャンネル名（クライアントの Identifier とサーバーの Wire 定数）
+  1. プラグインメッセージのチャンネル名（クライアント/OP用MOD の Identifier とサーバーの Wire 定数）
   2. レポート JSON のキー（サーバーが読むキーはクライアントが必ず書く）
   3. config.yml のキー（サーバーのコードが読むキーが全て定義されている）
   4. HMAC の鍵指紋ラベル（両側で一致）
@@ -24,6 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CLIENT = ROOT / "client" / "src" / "main" / "java"
+ADMIN = ROOT / "admin" / "src" / "main" / "java"
 SERVER = ROOT / "server" / "src" / "main"
 RESOURCES = SERVER / "resources"
 
@@ -88,7 +89,8 @@ def yaml_paths(text: str) -> set[str]:
 # 1. チャンネル名
 # --------------------------------------------------------------------------
 def channels() -> tuple[set[str], set[str]]:
-    client_text = all_java_text(CLIENT)
+    # OP 用 MOD（admin/）もクライアント側として数える
+    client_text = all_java_text(CLIENT) + "\n" + all_java_text(ADMIN)
     server_text = all_java_text(SERVER / "java")
     client_channels = {
         f"mcsa:{name}"
@@ -114,6 +116,8 @@ SERVER_KEY_PATTERNS = [
     r'json\.get\(\s*"([A-Za-z0-9_]+)"\s*\)',
     r'json\.has\(\s*"([A-Za-z0-9_]+)"\s*\)',
     r'self\.has\(\s*"([A-Za-z0-9_]+)"\s*\)',
+    r'\.get\(\s*"([A-Za-z0-9_]+)"\s*\)',
+    r'\bprobe(?:Int|Array|Object|Boolean)\(\s*[A-Za-z_]+\s*,\s*"([A-Za-z0-9_]+)"\s*\)',
 ]
 
 
@@ -126,6 +130,7 @@ def report_keys() -> tuple[set[str], set[str]]:
         server_keys |= set(re.findall(pattern, read(SERVER / "java" / "dev/ifuto/mcsa/server/report/ClientReport.java")))
         server_keys |= set(re.findall(pattern, read(SERVER / "java" / "dev/ifuto/mcsa/server/policy/ModPolicy.java")))
         server_keys |= set(re.findall(pattern, read(SERVER / "java" / "dev/ifuto/mcsa/server/command/AcCommand.java")))
+        server_keys |= set(re.findall(pattern, read(SERVER / "java" / "dev/ifuto/mcsa/server/policy/InjectionPolicy.java")))
     return client_keys, server_keys
 
 
@@ -139,7 +144,7 @@ CONFIG_GETTERS = re.compile(
 
 
 def main() -> int:
-    client_text = all_java_text(CLIENT)
+    client_text = all_java_text(CLIENT) + "\n" + all_java_text(ADMIN)
     server_text = all_java_text(SERVER / "java")
     config_yml = read(RESOURCES / "config.yml")
     plugin_yml = read(RESOURCES / "plugin.yml")
@@ -149,8 +154,9 @@ def main() -> int:
     check("クライアント/サーバーのチャンネル名が一致",
           client_channels == server_channels,
           f"client={sorted(client_channels)} server={sorted(server_channels)}")
-    check("チャンネルが 4 本ある",
-          client_channels == {"mcsa:challenge", "mcsa:hello", "mcsa:report", "mcsa:seal"},
+    check("チャンネルが 9 本ある（申告3 + 証拠/監視2 + OP連携2 + チャレンジ/指示2）",
+          client_channels == {"mcsa:challenge", "mcsa:task", "mcsa:hello", "mcsa:report", "mcsa:seal",
+                              "mcsa:evidence", "mcsa:digest", "mcsa:admin", "mcsa:adminmsg"},
           str(sorted(client_channels)))
 
     # 2. レポート JSON のキー
@@ -188,10 +194,10 @@ def main() -> int:
           bool(proto_match) and f"protocol = {proto_match.group(1)}" in docs if proto_match else False)
 
     # 6. 断片サイズ
-    chunk = re.search(r"CHUNK_SIZE\s*=\s*(\d+)", client_text)
-    check("レポート断片が Bukkit のプラグインメッセージ上限 (32767) 以下",
-          bool(chunk) and int(chunk.group(1)) <= 32767,
-          f"CHUNK_SIZE={chunk.group(1) if chunk else None}")
+    chunks = [int(value) for value in re.findall(r"CHUNK_SIZE\s*=\s*(\d+)", client_text)]
+    check("レポート/証拠の断片が Bukkit のプラグインメッセージ上限 (32767) 以下",
+          bool(chunks) and max(chunks) <= 32767,
+          f"CHUNK_SIZE={sorted(set(chunks))}")
 
     # 7. ドキュメント
     if docs:

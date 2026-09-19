@@ -1,0 +1,80 @@
+plugins {
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+    id 'java'
+}
+
+version = project.findProperty('mcsa_version') ?: '1.0.0'
+group = 'dev.ifuto.mcsa'
+base.archivesName = 'mcsa-admin'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+}
+
+processResources {
+    def v = project.version
+    inputs.property 'version', v
+    filesMatching('fabric.mod.json') {
+        expand 'version': v
+    }
+}
+
+// 成果物の検証（fabric.mod.json とエントリーポイントが jar に入っているか）
+tasks.register('verifyJar') {
+    group = 'verification'
+    description = 'remapJar の成果物を検証する'
+    dependsOn 'remapJar'
+    doLast {
+        def jarFile = layout.buildDirectory.file("libs/${base.archivesName.get()}-${version}.jar").get().asFile
+        if (!jarFile.exists()) {
+            throw new GradleException("成果物が見つかりません: ${jarFile}")
+        }
+        def names = []
+        def manifestJson = null
+        new java.util.zip.ZipFile(jarFile).withCloseable { zip ->
+            zip.entries().each { entry ->
+                names << entry.name
+                if (entry.name == 'fabric.mod.json') {
+                    manifestJson = zip.getInputStream(entry).getText('UTF-8')
+                }
+            }
+        }
+        if (manifestJson == null) {
+            throw new GradleException("fabric.mod.json が jar に入っていません: ${jarFile}")
+        }
+        def manifest = new groovy.json.JsonSlurper().parseText(manifestJson)
+        if (manifest.id != 'mcsa-admin') {
+            throw new GradleException("fabric.mod.json の id が mcsa-admin ではありません: ${manifest.id}")
+        }
+        def required = []
+        manifest.entrypoints.each { key, value ->
+            (value instanceof List ? value : [value]).each { entry ->
+                def className = (entry instanceof String ? entry : entry.value).toString()
+                required << className.replace('.', '/') + '.class'
+            }
+        }
+        def missing = required.findAll { !names.contains(it) }
+        if (!missing.isEmpty()) {
+            throw new GradleException("エントリーポイントのクラスが jar にありません: ${missing}")
+        }
+        logger.lifecycle("[MCSA] jar 検証: {} = {} エントリ / id={}", jarFile.name, names.size(), manifest.id)
+    }
+}
+tasks.named('build') { dependsOn 'verifyJar' }

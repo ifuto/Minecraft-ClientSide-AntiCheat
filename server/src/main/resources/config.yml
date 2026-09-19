@@ -52,9 +52,21 @@ challenge:
   # 収集を求める項目のビットマスク
   #   1=MOD 2=リソースパック 4=シェーダー 8=JVM引数
   collect-flags: 15
-  # クライアントに存在確認させるクラス名（MOD一覧に出ない注入の検知用）
-  # クライアントMODを更新せずに検知対象を増やせる
-  probe-classes: []
+  # クライアントに探させる名前（MOD一覧に出ない注入の検知用）。
+  # クライアントMODを配り直さずに検知対象を増やせる＝検知候補は動的に増やせる。
+  #   完全一致      : meteordevelopment.meteorclient.MeteorClient
+  #   prefix:       : prefix:me.rhys           （前方一致）
+  #   contains:     : contains:baritone        （部分一致）
+  #   regex:        : regex:^net\.wurst.*Client$
+  #   class:<上記>  : jar の中のクラス名を走査（ロードされていないものも見つかる）
+  #   lib:<上記>    : 読み込み中のライブラリ（jar 名）を照合
+  # /ac probe add <pattern> で実行時に追加もできる（config.yml にも書き戻る）
+  probe-classes:
+    - "prefix:meteordevelopment.meteorclient"
+    - "prefix:net.wurstclient"
+    - "prefix:net.ccbluex.liquidbounce"
+    - "contains:xray"
+    - "contains:killaura"
 
 # ---------------------------------------------------------------------------
 # クライアント jar そのものの検証
@@ -151,3 +163,67 @@ checks:
     # 1 tick あたりの水平移動量（スプリントで約 0.28）
     max-per-tick: 0.6
     max-ticks: 10
+
+# ---------------------------------------------------------------------------
+# 注入検知（Mixin / javaagent / ライブラリ名 / jar の中身）
+#   クライアントは「何が引っかかったか」だけを送り、判定はここで行う。
+#   Fabric 自体が Mixin を使うので、Mixin の存在だけでは何も判定しない。
+#   「出所不明の Mixin 設定」＋「注入痕跡」の組み合わせが本命。
+# ---------------------------------------------------------------------------
+injection:
+  enabled: true
+  # インストール済みMODのどれにも属さない Mixin 設定を重大扱いにする
+  unknown-mixin-critical: true
+  # 怪しい名前のライブラリ（byte-buddy / javassist 等）だけで重大扱いにするか。
+  # 正当なMODも使うので既定は false（参考情報として /ac info には出る）
+  library-critical: false
+  thread-critical: true
+  classloader-critical: true
+  # ゲームプレイ関連クラスへの注入痕跡がこの数以上なら「注入あり」とみなす
+  injected-member-threshold: 40
+  # MOD が入っているのに Mixin 設定が 0 件＝観測を潰されている疑いとして報告
+  require-mixin-configs: true
+
+# ---------------------------------------------------------------------------
+# 証拠（画面の取得）
+#   /ac shot <player> [reason] で OP が指示 → クライアントが画面を送る。
+#   対象プレイヤーの画面には何も表示しない（逃走されると証拠が消えるため）。
+#   保存先は plugins/MCSA/evidence/<player>-<uuid8>/、監査ログは evidence-log.txt。
+#
+#   【重要】画面は個人情報です。既定は無効。有効にする前に
+#   サーバールール／利用規約で「不正調査のために画面を取得・保存する場合がある」
+#   ことを告知してください（docs/PRIVACY.md に文例あり）。
+# ---------------------------------------------------------------------------
+evidence:
+  capture:
+    enabled: false
+    # 同じプレイヤーへの取得要求の最小間隔（秒）。乱用防止
+    min-interval-seconds: 5
+  # 受け付ける証拠の最大バイト数
+  max-bytes: 8388608
+  # 受信を OP（alerts.broadcast-permission 持ち）に通知する
+  notify: true
+  # 保持日数。0 で自動削除しない。/ac reload でも整理が走る
+  retention-days: 0
+
+# ---------------------------------------------------------------------------
+# 常時監視（ウォッチドッグ）
+#   「起動時だけ正常な顔をする」タイプへの対策。
+#   クライアントは一定間隔で状態ダイジェストを送り続け、サーバーは
+#   「内容が変わった」「送ってこなくなった」の両方を証拠にする（2段階認証と同じ発想）。
+# ---------------------------------------------------------------------------
+watchdog:
+  enabled: true
+  # サーバー側の監視間隔（tick, 20tick = 1秒）
+  check-ticks: 200
+  # ダイジェストがこれ以上途切れたら「MOD が停止された」とみなす（秒）
+  timeout-seconds: 180
+  # 実行時の状態変化で即キックするか。既定は false（まず証拠を集める）
+  kick-on-change: false
+  watch:
+    # /ac watch <player> <seconds> で指定できる上限
+    max-seconds: 1800
+    # 監視モード中のダイジェスト間隔（秒）
+    digest-interval-seconds: 20
+    # 監視モード中の画面取得間隔（秒）。evidence.capture.enabled=false なら撮らない
+    capture-interval-seconds: 60

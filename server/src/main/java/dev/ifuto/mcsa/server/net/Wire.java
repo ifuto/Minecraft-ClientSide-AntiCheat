@@ -21,9 +21,33 @@ import java.util.List;
 public final class Wire {
 
     public static final String CH_CHALLENGE = "mcsa:challenge";
+    public static final String CH_TASK = "mcsa:task";
+    public static final String CH_ADMIN_MSG = "mcsa:adminmsg";
     public static final String CH_HELLO = "mcsa:hello";
     public static final String CH_REPORT = "mcsa:report";
     public static final String CH_SEAL = "mcsa:seal";
+    public static final String CH_EVIDENCE = "mcsa:evidence";
+    public static final String CH_DIGEST = "mcsa:digest";
+    public static final String CH_ADMIN = "mcsa:admin";
+
+    /** task の指示の種類（クライアント側 {@code TaskPayload} と一致させる） */
+    public static final int TASK_RESCAN = 1;
+    public static final int TASK_CAPTURE = 2;
+    public static final int TASK_NOTE = 3;
+    public static final int TASK_WATCH_ON = 4;
+    public static final int TASK_WATCH_OFF = 5;
+
+    /** evidence の種類（クライアント側 {@code EvidencePayload} と一致させる） */
+    public static final int EVIDENCE_SHOT = 1;
+    public static final int EVIDENCE_NOTE = 3;
+
+    /** digest のフラグ（クライアント側 {@code DigestPayload} と一致させる） */
+    public static final int DIGEST_SELF_JAR_CHANGED = 1;
+    public static final int DIGEST_MIXIN_CHANGED = 1 << 1;
+    public static final int DIGEST_LIBRARY_CHANGED = 1 << 2;
+    public static final int DIGEST_PROBE_APPEARED = 1 << 3;
+    public static final int DIGEST_CLASSLOADER_CHANGED = 1 << 4;
+    public static final int DIGEST_CAPTURE_SUPPORTED = 1 << 5;
 
     /** チャレンジの collectFlags ビット */
     public static final int FLAG_MODS = 1;
@@ -38,6 +62,14 @@ public final class Wire {
     }
 
     public record Seal(int sessionId, int total, int dataLength, String hmac) {
+    }
+
+    /** 証拠（画面 / テキスト）の 1 断片 */
+    public record Evidence(int sessionId, int kind, int seq, int total, String name, String hmac, byte[] data) {
+    }
+
+    /** ウォッチドッグの状態ダイジェスト */
+    public record Digest(int sessionId, int seq, String stateHex, int flags, int intervalSeconds) {
     }
 
     private Wire() {
@@ -61,6 +93,26 @@ public final class Wire {
         return writer.toByteArray();
     }
 
+    /** S2C: OP からの指示 */
+    public static byte[] encodeTask(int protocol, int sessionId, String nonce, int kind,
+                                    int intervalSeconds, String reason) {
+        Writer writer = new Writer();
+        writer.varInt(protocol);
+        writer.varInt(sessionId);
+        writer.string(nonce == null ? "" : nonce);
+        writer.varInt(kind);
+        writer.varInt(intervalSeconds);
+        writer.string(reason == null ? "" : reason);
+        return writer.toByteArray();
+    }
+
+    /** S2C: OP の MOD への応答（テキスト） */
+    public static byte[] encodeAdminMessage(String text) {
+        Writer writer = new Writer();
+        writer.string(text == null ? "" : text);
+        return writer.toByteArray();
+    }
+
     // ---------------------------------------------------------------- C2S
 
     public static Hello decodeHello(byte[] raw) {
@@ -79,6 +131,27 @@ public final class Wire {
     public static Seal decodeSeal(byte[] raw) {
         Reader reader = new Reader(raw);
         return new Seal(reader.varInt(), reader.varInt(), reader.varInt(), reader.string(128));
+    }
+
+    public static Evidence decodeEvidence(byte[] raw) {
+        Reader reader = new Reader(raw);
+        int sessionId = reader.varInt();
+        int kind = reader.varInt();
+        int seq = reader.varInt();
+        int total = reader.varInt();
+        String name = reader.string(128);
+        String hmac = reader.string(128);
+        return new Evidence(sessionId, kind, seq, total, name, hmac, reader.bytes(1 << 20));
+    }
+
+    public static Digest decodeDigest(byte[] raw) {
+        Reader reader = new Reader(raw);
+        return new Digest(reader.varInt(), reader.varInt(), reader.string(32), reader.varInt(), reader.varInt());
+    }
+
+    /** C2S: OP の MOD から送られてくるコマンド文字列 */
+    public static String decodeAdmin(byte[] raw) {
+        return new Reader(raw).string(4096);
     }
 
     // ---------------------------------------------------------------- 入出力

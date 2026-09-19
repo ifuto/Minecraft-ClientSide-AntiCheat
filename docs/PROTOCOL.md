@@ -23,14 +23,20 @@ Minecraft の慣例どおり。
 
 ## 1. チャンネル
 
-| チャンネル          | 方向 | 内容                     |
-|---------------------|------|--------------------------|
-| `mcsa:challenge`    | S2C  | セッションと nonce の発行 |
-| `mcsa:hello`        | C2S  | 最小限の自己申告（導入判定）|
-| `mcsa:report`       | C2S  | レポート本体の断片        |
-| `mcsa:seal`         | C2S  | HMAC による封印           |
+| チャンネル          | 方向 | 内容                                   |
+|---------------------|------|----------------------------------------|
+| `mcsa:challenge`    | S2C  | セッションと nonce の発行（申告の要求） |
+| `mcsa:task`         | S2C  | OP からの指示（再申告 / 画面取得 / 監視）|
+| `mcsa:adminmsg`     | S2C  | OP 用 MOD への応答テキスト              |
+| `mcsa:hello`        | C2S  | 最小限の自己申告（導入判定）            |
+| `mcsa:report`       | C2S  | レポート本体の断片                      |
+| `mcsa:seal`         | C2S  | HMAC による封印                         |
+| `mcsa:evidence`     | C2S  | 証拠（画面 / テキスト）の断片           |
+| `mcsa:digest`       | C2S  | 常時監視の状態ダイジェスト              |
+| `mcsa:admin`        | C2S  | OP 用 MOD からのコマンド実行要求        |
 
-Bukkit 側では `mcsa:challenge` を outgoing、他 3 つを incoming として登録する。
+Bukkit 側では `mcsa:challenge` / `mcsa:task` / `mcsa:adminmsg` を outgoing、他 6 つを incoming として登録する
+（`McsaPlugin#incomingChannels` / `#outgoingChannels`）。
 
 ## 2. `mcsa:challenge`（S2C）
 
@@ -76,6 +82,66 @@ Bukkit 側では `mcsa:challenge` を outgoing、他 3 つを incoming として
 | 2 | varint | total       | 送った断片数                      |
 | 3 | varint | dataLength  | 再構成後の総バイト数              |
 | 4 | string | hmac        | HMAC-SHA256 の 16 進文字列（64 文字）|
+
+## 5.1 `mcsa:task`（S2C）
+
+OP が `/ac scan|shot|watch` を打つたびに送る。**指示ごとに nonce を新しくする**
+（同じ指示を使い回せないようにするため）。
+
+| # | 型     | 名前            | 説明                                              |
+|---|--------|-----------------|---------------------------------------------------|
+| 1 | varint | protocol        | プロトコル版                                       |
+| 2 | varint | sessionId       | セッション ID                                      |
+| 3 | string | nonce           | 新しい nonce（証拠の HMAC に混ぜる）                |
+| 4 | varint | kind            | 1=RESCAN 2=CAPTURE 3=NOTE 4=WATCH_ON 5=WATCH_OFF   |
+| 5 | varint | intervalSeconds | WATCH_ON のときのダイジェスト間隔（秒）             |
+| 6 | string | reason          | 取得理由（証拠の sidecar に記録される）             |
+
+- `CAPTURE` は **対象プレイヤーの画面には何も表示しない**。チャット・トースト・撮影音・
+  バニラのスクリーンショット通知、いずれも出さない（`SilentCapture`）。
+- クライアント側で `allowCapture=false` のときは、代わりに `KIND_NOTE` のテキストで
+  「拒否された」ことを返す。
+
+## 5.2 `mcsa:evidence`（C2S、複数回）
+
+| # | 型     | 名前  | 説明                                            |
+|---|--------|-------|-------------------------------------------------|
+| 1 | varint | sessionId | セッション ID                               |
+| 2 | varint | kind  | 1=画面（PNG/JPEG） 3=テキスト                   |
+| 3 | varint | seq   | 断片番号（0 始まり）                            |
+| 4 | varint | total | 断片の総数（上限 1024）                         |
+| 5 | string | name  | ファイル名（サーバー側でサニタイズされる）       |
+| 6 | string | hmac  | **全データに対する** HMAC-SHA256（16 進）        |
+| 7 | bytes  | data  | 断片（最大 16384 バイト）                       |
+
+HMAC は断片 0 だけでなく全断片に同じ値を入れる。断片 0 が欠落しても検証できるようにするため。
+サーバーは全断片が揃ってから `HMAC(key, nonce ‖ data)` を検証し、
+一致したものだけを `plugins/MCSA/evidence/` に保存する（不一致でも保存はするが
+`hmacValid=false` を sidecar に残し、アラートを出す）。
+
+## 5.3 `mcsa:digest`（C2S、定期的）
+
+「起動時だけ正常な顔をする」タイプへの対策。2 段階認証と同じで、
+**1 回通ることではなく通し続けることを条件にする**。
+
+| # | 型     | 名前            | 説明                                          |
+|---|--------|-----------------|-----------------------------------------------|
+| 1 | varint | sessionId       | セッション ID                                  |
+| 2 | varint | seq             | 送信回数（単調増加）                           |
+| 3 | string | stateHex        | 状態の FNV-1a 16 進（16 文字）。中身は送らない  |
+| 4 | varint | flags           | bit0=自分の jar 変化 bit1=Mixin 変化 bit2=ライブラリ変化 bit3=検知対象出現 bit4=クラスローダ変化 bit5=画面取得対応 |
+| 5 | varint | intervalSeconds | いまの間隔（秒）                               |
+
+サーバーは `flags != 0` を検出すると即アラートを出し、詳細を取るために再チャレンジする。
+`watchdog.timeout-seconds` を超えて届かなくなったら `WATCHDOG_SILENT` として記録する。
+
+## 5.4 `mcsa:admin` / `mcsa:adminmsg`
+
+OP 用 MOD（`admin/`）との連携。
+
+- `mcsa:admin`（C2S）: `string` 1 個。`/ac` の引数そのもの（例 `shot Steve reason`）。
+  サーバーは送信者に `mcsa.admin` があるか確認してから `Bukkit.dispatchCommand` する。
+- `mcsa:adminmsg`（S2C）: `string` 1 個。実行結果や証拠の受信通知。
 
 ## 6. 署名
 
@@ -150,7 +216,50 @@ keyId = hex( HMAC-SHA256( key, utf8("mcsa/keyid/v1") ) )[0..12]
     "classLoader": "net.fabricmc.loader.impl.launch.knot.KnotClassLoader",
     "defaultProbesFound": [],
     "probesFound": [],
-    "oddClasspath": []
+    "oddClasspath": [],
+
+    "mixinPresent": true,
+    "mixinConfigCount": 37,
+    "mixinConfigs": ["fabric-lifecycle-events-v1.client.mixins.json"],
+    "mixinUnknownConfigs": ["mixins.somecheat.json"],
+    "mixinInjectedCount": 12,
+    "mixinInjectedSample": ["net.minecraft.class_746#$handler$abc000"],
+
+    "agentClassPresent": false,
+    "attachApiPresent": false,
+    "suspiciousThreads": [],
+    "threadCount": 41,
+    "classloaderChain": ["net.fabricmc.loader.impl.launch.knot.KnotClassLoader", "…"],
+
+    "libraryCount": 128,
+    "libraryListTruncated": false,
+    "libraries": ["fabric-loader-0.19.5.jar"],
+    "suspiciousLibraries": [],
+
+    "jarScan": {
+      "scannedJars": 42,
+      "scannedEntries": 180233,
+      "skippedJars": 0,
+      "patternCount": 18,
+      "scannedJarNames": ["meteor-client.jar"],
+      "matchedClasses": ["meteordevelopment.meteorclient.MeteorClient@meteor-client.jar"]
+    },
+
+    "watchdog": {
+      "intervalSeconds": 45,
+      "uptimeSeconds": 1200,
+      "seq": 27,
+      "state": "9f1c0a2b3d4e5f60",
+      "changed": false,
+      "changes": []
+    },
+    "captureSupported": true,
+    "runtimeTampered": false,
+    "dynamicClassesFound": [],
+
+    "findings": ["MIXIN_UNKNOWN_CONFIG:mixins.somecheat.json"],
+    "findingCount": 1,
+    "findingDropped": 0
   },
 
   "self": {
@@ -164,7 +273,32 @@ keyId = hex( HMAC-SHA256( key, utf8("mcsa/keyid/v1") ) )[0..12]
 }
 ```
 
-サーバー側が読むキーは `ClientReport` / `ModPolicy` / `AcCommand` に集約してある。
+サーバー側が読むキーは `ClientReport` / `ModPolicy` / `InjectionPolicy` / `AcCommand` に集約してある。
+
+### `probes.findings[]` のコード一覧
+
+クライアントは判定せず、観測結果を `CODE:詳細` の形で送るだけ。判定は
+`InjectionPolicy`（サーバー）が行う。★ = 既定で重大扱い。
+
+| コード                   | 意味                                              |
+|--------------------------|---------------------------------------------------|
+| `CHEAT_CLASS` ★          | 検知対象のクラスがロードされている                |
+| `CHEAT_CLASS_LOADED` ★   | サーバー指定のクラスがロード済み（jar 名つき）     |
+| `CHEAT_CLASS_IN_JAR` ★   | jar の中に検知対象のクラスを見つけた              |
+| `JVM_ARG_SUSPICIOUS` ★   | `-javaagent` / `-agentlib` / `-xbootclasspath`     |
+| `DEBUGGER_ARG` ★         | jdwp / dt_socket                                  |
+| `AGENT_CLASS` ★          | `sun.instrument.InstrumentationImpl` がロード済み  |
+| `THREAD_SUSPICIOUS`      | 怪しい名前のスレッドが動いている                  |
+| `CLASSLOADER_ODD`        | Fabric の Knot 以外のクラスローダが混ざっている   |
+| `CLASSLOADER_NOT_FABRIC` | そもそも Fabric ローダで動いていない              |
+| `LIBRARY_SUSPICIOUS`     | 怪しい名前のライブラリ（jar）を読み込んでいる     |
+| `MIXIN_UNKNOWN_CONFIG` ★ | インストール済み MOD のどれにも属さない Mixin 設定 |
+| `MIXIN_CONFIG_COUNT`     | Mixin 設定の総数（参考）                          |
+| `MIXIN_INJECTED`         | ゲームプレイ関連クラスへの注入痕跡の数（参考）     |
+| `MIXIN_INJECT_SAMPLE`    | 注入痕跡のサンプル（参考）                        |
+| `LIBRARY_COUNT`          | 読み込み中ライブラリの数（参考）                  |
+| `STATE_CHANGED` ★        | ウォッチドッグが起動時との差分を検出              |
+| `ODD_CLASSPATH`          | クラスパスに見慣れない jar                        |
 
 ## 8. サイズとエラー処理
 

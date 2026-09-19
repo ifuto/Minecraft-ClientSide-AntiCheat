@@ -1,33 +1,35 @@
 name: Build Check
 
-# client/（Fabric MOD）と server/（Paper プラグイン）を実際にコンパイルする。
-# リポジトリの Multi Build / Multi Build (Paper) は gradlew を前提にしているが、
-# gradle-wrapper.jar はバイナリなので Git に入れていない。ここでは Gradle を
-# インストールしてビルドし、ついでに wrapper を生成して成果物として上げる。
+# client/（Fabric MOD）・admin/（OP 用 MOD）・server/（Paper プラグイン）を
+# すべて実際にコンパイルする CI。
+#
+# リポジトリの Multi Build / Multi Build (Paper) は trigger.md の workdir を
+# 共有しているため 1 回の push では 1 プロジェクトしか見ない。こちらは 3 つを
+# 並列で見るので、こっちを .github/workflows/ に置くのがおすすめ。
+#
+# 失敗時は javac のエラー行をチェックのアノテーションに出す
+# （Actions のログは取得できない環境からでも読めるようにするため）。
 
 on:
   push:
     branches: ["**"]
     paths:
       - "client/**"
+      - "admin/**"
       - "server/**"
       - "tools/**"
       - "gradle.properties"
       - ".github/workflows/build-check.yml"
   pull_request:
   workflow_dispatch:
-    inputs:
-      obfuscate:
-        description: "難読化ビルドも検証する"
-        required: false
-        type: boolean
-        default: true
 
 permissions:
   contents: read
 
 env:
   GRADLE_VERSION: "9.7.1"
+  # Loom 1.18.2 は Gradle の実行に JDK 25 を要求する（成果物は Java 21 バイトコード）
+  JAVA_VERSION: "25"
 
 jobs:
   contract:
@@ -38,9 +40,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: クライアント／サーバーの契約チェック
+      - name: プロトコルの整合（チャンネル名・JSON キー・config キー）
         run: python3 tools/verify_protocol.py
-      - name: Java ソースの整合チェック
+      - name: Java ソースの整合（括弧・import・呼び出し先）
         run: python3 tools/check_java_syntax.py
 
   client:
@@ -51,28 +53,28 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ env.JAVA_VERSION }}
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
-      - name: ビルド
+      - name: ビルド（難読化込み）
         working-directory: client
-        run: gradle build --no-daemon --stacktrace
-
-      - name: 難読化ビルド
-        working-directory: client
-        run: gradle obfuscateJar --no-daemon --stacktrace
+        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
 
       - name: 成果物の中身を確認
         working-directory: client
         run: |
           set -euo pipefail
           ls -l build/libs
-          # 通常ビルドに fabric.mod.json とエントリーポイントが入っていること
+          # fabric.mod.json とエントリーポイントが入っていること
           unzip -l build/libs/mcsa-client-*.jar | grep -E 'fabric\.mod\.json|McsaClient\.class|KeyMaterial\.class'
-          # 難読化ビルドでパッケージ名が変わっていること（＝リネームが効いている）
-          unzip -l build/libs/mcsa-client-*-obf.jar | grep -c 'dev/ifuto/mcsa/client/McsaClient.class' || true
+          # 難読化ビルドでも fabric.mod.json とエントリーポイントが残っていること
+          unzip -p build/libs/mcsa-client-*-obf.jar fabric.mod.json | head -20
+
+      - name: "失敗時: エラーをアノテーション化"
+        if: failure()
+        run: bash ci/annotate.sh client/build-log.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -80,6 +82,33 @@ jobs:
           path: |
             client/build/libs/*.jar
             client/build/libs/*hmac-key.txt
+          if-no-files-found: error
+
+  admin:
+    name: OP 用 MOD（Fabric）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: ビルド
+        working-directory: admin
+        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
+
+      - name: "失敗時: エラーをアノテーション化"
+        if: failure()
+        run: bash ci/annotate.sh admin/build-log.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcsa-admin
+          path: admin/build/libs/*.jar
           if-no-files-found: error
 
   server:
@@ -90,14 +119,14 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ env.JAVA_VERSION }}
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
       - name: ビルド
         working-directory: server
-        run: gradle build --no-daemon --stacktrace
+        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
 
       - name: plugin.yml を確認
         working-directory: server
@@ -105,6 +134,10 @@ jobs:
           set -euo pipefail
           ls -l build/libs
           unzip -p build/libs/mcsa-server-*.jar plugin.yml
+
+      - name: "失敗時: エラーをアノテーション化"
+        if: failure()
+        run: bash ci/annotate.sh server/build-log.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -120,7 +153,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ env.JAVA_VERSION }}
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}

@@ -2,9 +2,12 @@ package dev.ifuto.mcsa.client;
 
 import dev.ifuto.mcsa.client.collect.ReportBuilder;
 import dev.ifuto.mcsa.client.integrity.SelfIntegrity;
+import dev.ifuto.mcsa.client.integrity.Watchdog;
 import dev.ifuto.mcsa.client.net.ChallengePayload;
 import dev.ifuto.mcsa.client.net.Handshake;
 import dev.ifuto.mcsa.client.net.Payloads;
+import dev.ifuto.mcsa.client.net.TaskPayload;
+import dev.ifuto.mcsa.client.net.Tasks;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
@@ -48,10 +51,19 @@ public final class McsaClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(ChallengePayload.ID,
                 (payload, context) -> Handshake.onChallenge(payload));
 
+        // S2C: OP からの指示（再申告 / 画面取得 / 監視間隔の変更）
+        ClientPlayNetworking.registerGlobalReceiver(TaskPayload.ID,
+                (payload, context) -> Tasks.onTask(payload));
+
         // 起動時に一度だけ自己整合性を計算しておく（重いので非同期）
         ReportBuilder.executor().execute(SelfIntegrity::prefetch);
 
-        LOGGER.info("[MCSA] 初期化完了 (version={}, protocol={}, reportPolicy={})",
-                modVersion(), PROTOCOL, McsaConfig.get().reportPolicy);
+        // 起動時だけ正常な顔をするタイプへの対策（常時監視）
+        ReportBuilder.executor().execute(Watchdog::start);
+
+        LOGGER.info("[MCSA] 初期化完了 (version={}, protocol={}, reportPolicy={}, watchdog={}s, capture={})",
+                modVersion(), PROTOCOL, McsaConfig.get().reportPolicy,
+                McsaConfig.get().watchdogIntervalSeconds,
+                McsaConfig.get().allowCapture ? "allowed" : "denied");
     }
 }

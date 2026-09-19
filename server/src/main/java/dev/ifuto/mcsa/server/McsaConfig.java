@@ -87,6 +87,48 @@ public final class McsaConfig {
     public double speedMaxPerTick = 0.6;
     public int speedMaxTicks = 10;
 
+    // --- 注入検知（Mixin / javaagent / ライブラリ名 / jar の中身）
+    public boolean injectionEnabled = true;
+    /** 出所不明の Mixin 設定を重大扱いにするか */
+    public boolean unknownMixinCritical = true;
+    /** 怪しい名前のライブラリだけで重大扱いにするか（誤検知しやすいので既定はしない） */
+    public boolean libraryCritical = false;
+    /** 怪しいスレッド名を重大扱いにするか */
+    public boolean threadCritical = true;
+    /** クラスローダの異常を重大扱いにするか */
+    public boolean classloaderCritical = true;
+    /** ゲームプレイ関連クラスへの注入痕跡がこれ以上あると「注入あり」とみなす */
+    public int injectedMemberThreshold = 40;
+    /** MOD が入っているのに Mixin 設定が 0 件なら「観測を潰されている」として報告 */
+    public boolean requireMixinConfigs = true;
+
+    // --- 証拠（画面取得）
+    /** 画面取得を許可するか。<b>既定は無効</b>（有効化には利用規約での告知が必要） */
+    public boolean captureEnabled = false;
+    /** 同じプレイヤーへの取得要求の最小間隔（秒） */
+    public int captureMinIntervalSeconds = 5;
+    /** 受け付ける証拠の最大バイト数 */
+    public int captureMaxBytes = 8 * 1024 * 1024;
+    /** 証拠の受信を OP に通知するか */
+    public boolean evidenceNotify = true;
+    /** 証拠の保持日数（0 で自動削除しない） */
+    public int evidenceRetentionDays = 0;
+
+    // --- 常時監視（ウォッチドッグ）
+    public boolean watchdogEnabled = true;
+    /** サーバー側の監視間隔（tick） */
+    public int watchdogCheckTicks = 200;
+    /** ダイジェストがこれ以上途切れたら「MOD が止まった」とみなす（秒） */
+    public int watchdogTimeoutSeconds = 180;
+    /** 実行時の状態変化で即 Kick するか（既定はしない＝証拠を集める） */
+    public boolean watchdogKickOnChange = false;
+    /** /ac watch で指定できる最大の秒数 */
+    public int watchMaxSeconds = 1800;
+    /** 監視モード中のダイジェスト間隔（秒） */
+    public int watchIntervalSeconds = 20;
+    /** 監視モード中の画面取得間隔（秒） */
+    public int watchCaptureIntervalSeconds = 60;
+
     /** pins.yml: MOD id -> 許可する SHA-256 の集合 */
     public final Map<String, Set<String>> pins = new LinkedHashMap<>();
     /** pins.yml: 配布クライアント jar の SHA-256 */
@@ -170,6 +212,28 @@ public final class McsaConfig {
         speedEnabled = config.getBoolean("checks.speed.enabled", true);
         speedMaxPerTick = config.getDouble("checks.speed.max-per-tick", 0.6);
         speedMaxTicks = config.getInt("checks.speed.max-ticks", 10);
+
+        injectionEnabled = config.getBoolean("injection.enabled", true);
+        unknownMixinCritical = config.getBoolean("injection.unknown-mixin-critical", true);
+        libraryCritical = config.getBoolean("injection.library-critical", false);
+        threadCritical = config.getBoolean("injection.thread-critical", true);
+        classloaderCritical = config.getBoolean("injection.classloader-critical", true);
+        injectedMemberThreshold = config.getInt("injection.injected-member-threshold", 40);
+        requireMixinConfigs = config.getBoolean("injection.require-mixin-configs", true);
+
+        captureEnabled = config.getBoolean("evidence.capture.enabled", false);
+        captureMinIntervalSeconds = config.getInt("evidence.capture.min-interval-seconds", 5);
+        captureMaxBytes = config.getInt("evidence.max-bytes", 8 * 1024 * 1024);
+        evidenceNotify = config.getBoolean("evidence.notify", true);
+        evidenceRetentionDays = config.getInt("evidence.retention-days", 0);
+
+        watchdogEnabled = config.getBoolean("watchdog.enabled", true);
+        watchdogCheckTicks = config.getInt("watchdog.check-ticks", 200);
+        watchdogTimeoutSeconds = config.getInt("watchdog.timeout-seconds", 180);
+        watchdogKickOnChange = config.getBoolean("watchdog.kick-on-change", false);
+        watchMaxSeconds = config.getInt("watchdog.watch.max-seconds", 1800);
+        watchIntervalSeconds = config.getInt("watchdog.watch.digest-interval-seconds", 20);
+        watchCaptureIntervalSeconds = config.getInt("watchdog.watch.capture-interval-seconds", 60);
 
         loadPins();
     }

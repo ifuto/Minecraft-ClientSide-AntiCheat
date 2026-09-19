@@ -9,6 +9,7 @@
 | `/ac status` | オンライン全員の導入有無・MOD バージョン・フラグ件数・違反レベルの一覧 |
 | `/ac info <player>` | そのプレイヤーの詳細（HMAC 検証、難読化、jar ハッシュ、フラグ、送信拒否項目、VL） |
 | `/ac refresh <player>` | レポートを再要求する（チャレンジを再送） |
+| `/ac scan <player>` | **新しい nonce で**環境を申告し直させる（起動時だけ正常な顔をする対策） |
 
 ```
 > /ac status
@@ -51,6 +52,34 @@
   helper.jar (fabric.mod.json なし＝MODとして読み込まれない注入物)
 ```
 
+## 注入検知と証拠
+
+| コマンド | 説明 |
+|----------|------|
+| `/ac shot <player> [reason]` | **画面を取得**してサーバーに保存する（対象の画面には何も表示されない） |
+| `/ac watch <player> <seconds\|off>` | 高頻度監視。ダイジェスト間隔を詰め、`evidence.capture.enabled=true` なら定期的に画面も取得 |
+| `/ac evidence <player>` | 保存済みの証拠（画像・テキスト）の一覧と保存先 |
+
+```
+> /ac shot Alex 通報対応
+ 要求しました。届くと .../plugins/MCSA/evidence に保存されます
+> /ac evidence Alex
+── Alex の証拠 (2 件) ──
+ .../evidence/Alex-9b1f.../2026-09-19T09-12-03_shot-1758....png
+ 保存先: plugins/MCSA/evidence
+ 監査ログ: plugins/MCSA/evidence/evidence-log.txt
+```
+
+**画面取得を使う前に**（`docs/PRIVACY.md`）:
+
+1. `config.yml` の `evidence.capture.enabled` を `true` にする（**既定は false**）
+2. サーバールール／利用規約に「不正調査のために画面を取得・保存する場合がある」ことを書く
+3. 取得したら必ず `/ac evidence <player>` で保存先を確認し、監査ログ（`evidence-log.txt`）を残す
+
+対象プレイヤーの画面には**何も表示されない**（チャット・トースト・撮影音なし）。
+これは「撮られた」と分かって抜けるのを防ぐためで、倫理的な根拠は
+**事前にルールで告知していること**に置く。告知なしの運用はしないこと。
+
 ## 検知履歴と処分
 
 | コマンド | 説明 |
@@ -69,9 +98,24 @@
 | `/ac policy require list` | 導入必須リストを表示 |
 | `/ac policy pin <player> <modId>` | そのプレイヤーのレポートから MOD の SHA-256 を `pins.yml` に固定 |
 | `/ac policy pin-client <player>` | そのプレイヤーのクライアント jar の SHA-256 を固定 |
-| `/ac policy probe list` | クライアントに探索させるクラス名の一覧 |
-| `/ac policy probe add <class>` | 探索クラスを追加（クライアント MOD の更新なしに検知対象を増やせる） |
-| `/ac policy probe remove <class>` | 探索クラスを削除 |
+| `/ac policy probe list` | 検知候補（クラス名 / パターン）の一覧 |
+| `/ac policy probe add <pattern>` | 検知候補を追加。**クライアント MOD を配り直さずに検知対象を増やせる** |
+| `/ac policy probe remove <pattern>` | 検知候補を削除 |
+
+### 検知候補の書き方（動的に増やせる）
+
+| 書き方 | 意味 | 例 |
+|--------|------|----|
+| 完全一致 | そのクラスがロードされているか | `meteordevelopment.meteorclient.MeteorClient` |
+| `prefix:` | 前方一致（ロード判定はせず jar 走査で使う） | `prefix:me.rhys` |
+| `contains:` | 部分一致 | `contains:killaura` |
+| `regex:` | 正規表現（部分一致） | `regex:^net\.wurst.*Client$` |
+| `class:` + 上記 | jar の**中身**（エントリ名）を走査。ロードされていないものも見つかる | `class:prefix:me.rhys` |
+| `lib:` + 上記 | 読み込み中のライブラリ（jar 名）を照合 | `lib:contains:byte-buddy` |
+
+新しいチートが出たら、その MOD のパッケージ名を 1 行足すだけで全クライアントに配布される。
+`config.yml` の `challenge.probe-classes` に書くのでも同じ（`/ac policy probe add` は
+`config.yml` にも書き戻す）。
 | `/ac reload` | `config.yml` / `pins.yml` を読み直す |
 
 ### ピン留めの運用
@@ -88,6 +132,27 @@
 ```
 
 以降、`sodium` を名乗る MOD でハッシュが違うクライアントは `MOD_ID_SPOOF:sodium`（critical）になる。
+
+## OP 用クライアント MOD（`admin/`）
+
+コンソールを開かなくても、運営が自分のクライアントから調査できるようにする MOD。
+**運営だけに入れる**もの（プレイヤーには配布しない）。
+
+| コマンド（クライアント側） | 説明 |
+|------|------|
+| `/acadmin` | ヘルプ |
+| `/acadmin <args...>` | サーバーの `/ac <args...>` を実行する（権限 `mcsa.admin` が必要） |
+
+```
+> /acadmin shot Alex 通報対応
+ §7/ac shot Alex 通報対応 §8→ サーバーへ送信しました
+ §6[MCSA] §7画面を受信しました: evidence/Alex-9b1f.../2026-09-19T09-12-03_shot.png (284112 bytes, hmac=ok)
+```
+
+
+- サーバー側の権限判定を通るので、MOD だけ入れても権限がなければ何もできない。
+- 実行結果と証拠の受信通知はチャットに出る（`mcsa:adminmsg`）。
+- 画面そのものはクライアントに送られない。サーバーの `plugins/MCSA/evidence/` に保存される。
 
 ## 権限
 

@@ -33,6 +33,9 @@ public final class ReportListener implements PluginMessageListener {
                 case Wire.CH_HELLO -> plugin.sessions().onHello(online, copy);
                 case Wire.CH_REPORT -> plugin.sessions().onChunk(online, copy);
                 case Wire.CH_SEAL -> plugin.sessions().onSeal(online, copy);
+                case Wire.CH_EVIDENCE -> plugin.sessions().onEvidence(online, copy);
+                case Wire.CH_DIGEST -> plugin.sessions().onDigest(online, copy);
+                case Wire.CH_ADMIN -> plugin.sessions().onAdmin(online, copy);
                 default -> plugin.getLogger().warning("不明なチャンネル: " + channel);
             }
         });
