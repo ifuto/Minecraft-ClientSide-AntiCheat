@@ -130,6 +130,60 @@ sourceSets.main.java.srcDir(keySrcDir)
 tasks.named('compileJava') { dependsOn 'generateKeyMaterial' }
 
 // ---------------------------------------------------------------------------
+// 成果物の検証
+//   fabric.mod.json の entrypoints が指すクラスが実際に jar に入っているかを
+//   ビルド時に確認する（難読化でエントリーポイントを消す事故の防止）。
+// ---------------------------------------------------------------------------
+def verifyModJar = { File jarFile ->
+    if (!jarFile.exists()) {
+        throw new GradleException("成果物が見つかりません: ${jarFile}")
+    }
+    def names = []
+    def manifestJson = null
+    new java.util.zip.ZipFile(jarFile).withCloseable { zip ->
+        zip.entries().each { entry ->
+            names << entry.name
+            if (entry.name == 'fabric.mod.json') {
+                manifestJson = zip.getInputStream(entry).getText('UTF-8')
+            }
+        }
+    }
+    if (manifestJson == null) {
+        throw new GradleException("fabric.mod.json が jar に入っていません: ${jarFile}")
+    }
+    def manifest = new groovy.json.JsonSlurper().parseText(manifestJson)
+    def required = []
+    manifest.entrypoints.each { key, value ->
+        (value instanceof List ? value : [value]).each { entry ->
+            def className = (entry instanceof String ? entry : entry.value).toString()
+            required << className.replace('.', '/') + '.class'
+        }
+    }
+    def missing = required.findAll { !names.contains(it) }
+    logger.lifecycle("[MCSA] jar 検証: {} = {} エントリ / エントリーポイント {} 件 / id={}",
+            jarFile.name, names.size(), required.size(), manifest.id)
+    if (manifest.id != 'mcsa') {
+        throw new GradleException("fabric.mod.json の id が mcsa ではありません: ${manifest.id}")
+    }
+    if (!missing.isEmpty()) {
+        throw new GradleException("エントリーポイントのクラスが jar にありません: ${missing}")
+    }
+    if (jarFile.length() < 10_000) {
+        throw new GradleException("jar が小さすぎます（ビルドが壊れている可能性）: ${jarFile.length()} bytes")
+    }
+}
+
+tasks.register('verifyJar') {
+    group = 'verification'
+    description = 'remapJar の成果物を検証する'
+    dependsOn 'remapJar'
+    doLast {
+        verifyModJar(layout.buildDirectory.file("libs/${base.archivesName.get()}-${version}.jar").get().asFile)
+    }
+}
+tasks.named('build') { dependsOn 'verifyJar' }
+
+// ---------------------------------------------------------------------------
 // 難読化（ProGuard）  -Pmcsa.obfuscate=true で build に組み込まれる
 //   Loom の remapJar 出力（intermediary 名になった jar）に対して掛ける。
 // ---------------------------------------------------------------------------
@@ -158,6 +212,10 @@ tasks.register('obfuscateJar', JavaExec) {
         libs.each { a << '-libraryjars' << it }
         a << "@${file('proguard.pro').absolutePath}"
         args = a
+    }
+    doLast {
+        // 難読化でエントリーポイントが消えていないことを確認する
+        verifyModJar(outJar.get().asFile)
     }
 }
 
