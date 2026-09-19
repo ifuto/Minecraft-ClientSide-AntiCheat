@@ -10,10 +10,10 @@
 #           （server は Paper 1.21.11 の起動＋Enable まで確認済み）。
 #           3 つを一度に見たい場合は ci/build-check.yml を .github/workflows/ に置く。
 
-workdir: admin
-artifact_path: admin/build/libs/*.jar
+workdir: client
+artifact_path: client/build/libs/*.jar
 java: 25
 server_test: false
 
 # ビルド番号（この行を変えると push トリガーが走る）
-build: 11
+build: 12
