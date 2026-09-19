@@ -1,0 +1,10 @@
+// ルートプロジェクトはビルドしない。
+// client/ server/ admin/ はそれぞれ独立した Gradle ビルドで、
+//   ./gradlew -p client build
+//   ./gradlew -p server build
+//   ./gradlew -p admin  build
+// のように -p で対象を指定してビルドする。
+//
+// このファイルは「ルートで `gradle wrapper` を実行できるようにする」ために置いている
+// （settings.gradle が無いと Gradle 9 はルートでのタスク実行を拒否する）。
+rootProject.name = 'mcsa'
