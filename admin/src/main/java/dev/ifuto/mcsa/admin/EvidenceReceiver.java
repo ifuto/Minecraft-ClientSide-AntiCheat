@@ -150,6 +150,22 @@ public final class EvidenceReceiver {
         }
     }
 
+    /**
+     * 「クリックでファイルを開く」イベントを作る。
+     *
+     * <p>1.21.11 の {@code ClickEvent} は抽象クラスになっていて
+     * {@code new ClickEvent(...)} できない（版によって生成方法が変わる）ため、
+     * ファクトリメソッドをリフレクションで呼ぶ。取れなければリンク無しで出すだけ。
+     */
+    private static ClickEvent openFileEvent(String path) {
+        try {
+            java.lang.reflect.Method method = ClickEvent.class.getMethod("openFile", String.class);
+            return (ClickEvent) method.invoke(null, path);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     /** フォルダを開く */
     public static void openFolder() {
         try {
@@ -175,9 +191,9 @@ public final class EvidenceReceiver {
                 }
                 MutableText text = Text.literal(message);
                 if (linkPath != null) {
+                    ClickEvent click = openFileEvent(linkPath.toAbsolutePath().toString());
                     text = text.setStyle(text.getStyle()
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE,
-                                    linkPath.toAbsolutePath().toString()))
+                            .withClickEvent(click)
                             .withUnderline(true));
                 } else {
                     text = text.setStyle(text.getStyle().withColor(TextColor.fromRgb(rgb)));
