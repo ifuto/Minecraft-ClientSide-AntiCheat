@@ -173,12 +173,88 @@ def verifyModJar = { File jarFile ->
     }
 }
 
+// ---------------------------------------------------------------------------
+// StackMapTable の検証（VerifyError 予防）
+//   Java 6+ (version >= 50) のクラスファイルは、分岐を持つメソッドに
+//   StackMapTable 属性が必須。ProGuard に -dontpreverify を付けると書かれなく
+//   なり、「ビルドは通るが起動直後に VerifyError で落ちる」jar ができる。
+//   JDK 24+ の ClassFile API（Gradle 実行 JVM 上）で機械的に確認する。
+// ---------------------------------------------------------------------------
+def BRANCH_OPCODES = ['IFEQ', 'IFNE', 'IFLT', 'IFGE', 'IFGT', 'IFLE',
+                      'IF_ICMPEQ', 'IF_ICMPNE', 'IF_ICMPLT', 'IF_ICMPGE', 'IF_ICMPGT', 'IF_ICMPLE',
+                      'IF_ACMPEQ', 'IF_ACMPNE', 'IFNULL', 'IFNONNULL',
+                      'GOTO', 'GOTO_W', 'TABLESWITCH', 'LOOKUPSWITCH'] as Set
+
+def verifyStackMaps = { File jarFile ->
+    def classFileApi
+    try {
+        classFileApi = Class.forName('java.lang.classfile.ClassFile').getMethod('of').invoke(null)
+    } catch (Throwable ignored) {
+        logger.warn('[MCSA] StackMapTable 検証をスキップ: 実行 JVM に ClassFile API がありません' +
+                '（Gradle を JDK 24+ で実行してください）')
+        return
+    }
+    def parse = Class.forName('java.lang.classfile.ClassFile').getMethod('parse', byte[])
+    def smtClass = Class.forName('java.lang.classfile.attribute.StackMapTableAttribute')
+    def codeClass = Class.forName('java.lang.classfile.attribute.CodeAttribute')
+    def bad = []
+    int checked = 0
+    new java.util.zip.ZipFile(jarFile).withCloseable { zip ->
+        Collections.list(zip.entries()).each { entry ->
+            if (!entry.name.endsWith('.class')) {
+                return
+            }
+            def model
+            try {
+                model = parse.invoke(classFileApi, zip.getInputStream(entry).readAllBytes())
+            } catch (Throwable t) {
+                bad << "${entry.name}: クラスを解析できません (${t.class.simpleName})"
+                return
+            }
+            model.methods().each { m ->
+                def code = m.attributes().find { codeClass.isInstance(it) }
+                if (code == null) {
+                    return
+                }
+                checked++
+                def hasBranch = false
+                code.elementList().each { el ->
+                    def op
+                    try {
+                        op = el.opcode()
+                    } catch (Throwable ignored) {
+                        return
+                    }
+                    if (op != null && BRANCH_OPCODES.contains(op.name())) {
+                        hasBranch = true
+                    }
+                }
+                if (hasBranch && !code.attributes().any { smtClass.isInstance(it) }) {
+                    def methodName
+                    try {
+                        methodName = m.methodName().stringValue()
+                    } catch (Throwable ignored) {
+                        methodName = '?'
+                    }
+                    bad << "${entry.name} の ${methodName}(): 分岐があるのに StackMapTable が無い"
+                }
+            }
+        }
+    }
+    if (!bad.isEmpty()) {
+        throw new GradleException("StackMapTable が欠けています（この jar は起動直後に VerifyError で落ちます）: ${jarFile.name}\n  " + bad.take(10).join('\n  '))
+    }
+    logger.lifecycle("[MCSA] StackMapTable 検証OK: ${jarFile.name}（メソッド ${checked} 件）")
+}
+
 tasks.register('verifyJar') {
     group = 'verification'
     description = 'remapJar の成果物を検証する'
     dependsOn 'remapJar'
     doLast {
-        verifyModJar(layout.buildDirectory.file("libs/${base.archivesName.get()}-${version}.jar").get().asFile)
+        def plain = layout.buildDirectory.file("libs/${base.archivesName.get()}-${version}.jar").get().asFile
+        verifyModJar(plain)
+        verifyStackMaps(plain)
     }
 }
 tasks.named('build') { dependsOn 'verifyJar' }
@@ -214,8 +290,10 @@ tasks.register('obfuscateJar', JavaExec) {
         args = a
     }
     doLast {
-        // 難読化でエントリーポイントが消えていないことを確認する
+        // 難読化でエントリーポイントが消えていないことと、
+        // StackMapTable が欠けていないこと（起動時 VerifyError の予防）を確認する
         verifyModJar(outJar.get().asFile)
+        verifyStackMaps(outJar.get().asFile)
     }
 }
 

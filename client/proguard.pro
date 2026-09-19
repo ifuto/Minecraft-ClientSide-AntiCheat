@@ -9,7 +9,13 @@
 
 -dontoptimize
 -dontshrink
--dontpreverify
+
+# ※ -dontpreverify は絶対に付けないこと。
+#   Java 6+ のクラスファイルは分岐を持つメソッドに StackMapTable が必須で、
+#   これを無効化すると jar はビルドできるが、起動直後に
+#   「java.lang.VerifyError: Expecting a stackmap frame」で Minecraft が落ちる
+#   （実際に build 16 以前の -obf.jar で発生した）。
+#   検証は build.gradle の verifyStackMaps がビルド時に機械的に行う。
 
 # 例外スタックトレースからソース情報を消す
 -renamesourcefileattribute ''

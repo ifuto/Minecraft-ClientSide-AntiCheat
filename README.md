@@ -106,6 +106,10 @@ GitHub App の権限制約でこちらは `.github/workflows/` を push でき�
 - 設定は [`client/proguard.pro`](client/proguard.pro)。エントリーポイントと
   `CustomPayload` 実装は `-keep` してあり、ビルド時に `verifyJar` タスクが
   「jar にエントリーポイントのクラスが入っているか」を検証する。
+- さらに `verifyStackMaps` が「分岐を持つ全メソッドに StackMapTable があるか」を
+  検証する（かつて `-dontpreverify` 付きでビルドした -obf.jar が起動直後に
+  `VerifyError: Expecting a stackmap frame` で落ちた事故の再発防止）。
+  **build 16 以前の `-obf.jar` は起動できないので配布・使用しないこと。**
 
 ### HMAC 鍵
 
