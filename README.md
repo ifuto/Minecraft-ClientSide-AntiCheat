@@ -57,6 +57,19 @@ java: 25                             # Loom 1.18 は JDK 25 が必要
 3 つを一度に見たい場合は [`ci/build-check.yml`](ci/build-check.yml) を
 `.github/workflows/` にコピーする（client / admin / server を並列ビルドする）。
 
+```bash
+cp ci/build-check.yml .github/workflows/build-check-2.yml   # 中身を差し替える
+```
+
+GitHub App の権限制約でこちらは `.github/workflows/` を push できないため、
+**コピーは手動で**お願いします。古い中身のままだと次の 2 つで落ちます
+（どちらも `ci/build-check.yml` では修正済み）。
+
+| 症状 | 原因 |
+|------|------|
+| `Client MOD` の「成果物の中身を確認」が失敗 | `mcsa-client-*.jar` が難読化版 (`-obf.jar`) にも一致し、`unzip` に jar を 2 本渡して exit 11 |
+| `OP 用 MOD` のビルドが失敗しているのに success 扱い | `gradle … \| tee` は `tee` の終了コードを返す（`set -o pipefail` を追加済み） |
+
 サーバープラグインは `server_test: true` を追加すると、CI 上で実際に Paper を起動して
 プラグインが Enable されるかまで確認する。
 

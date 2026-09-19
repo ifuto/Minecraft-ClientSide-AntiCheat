@@ -239,6 +239,42 @@ jar の中身を見るので取りこぼさない。逆に「jar を消してメ
 - **既定は無効**（`evidence.capture.enabled: false`）。有効化するには
   サーバールールでの告知が前提（[`PRIVACY.md`](PRIVACY.md)）。
 
+### 5.7 起動時の同意（プライバシィ告知）
+
+情報を取られる側の同意を、**プレイを始める前**に取る。
+
+```
+Minecraft 起動
+   └─ 最初の tick で ConsentScreen を表示（ESC では閉じられない）
+        ├─ I Agree        → 文面の SHA-256(先頭12) と時刻を config/mcsa/client.json に記録
+        └─ Decline and Quit → 拒否を記録して Minecraft を終了（scheduleStop → stop → exit）
+```
+
+- 文面は jar 同梱の `privacy-notice.txt` を初回起動時に
+  `config/mcsa/privacy-notice.txt` へ書き出す。**運営が自分の言葉に書き換えてよい。**
+- 記録するのは「文面の指紋」なので、**文面が変われば全員に同意を取り直す**
+  （MOD の更新でも、運営の編集でも）。
+- 同意していない間は自己申告（HELLO/REPORT）を送らない。
+- 同意の事実（`consent.accepted` / `hash` / `at`）はレポートに載るので、
+  サーバー側でも `CONSENT_MISSING` ★ / `CONSENT_NOTICE_MISMATCH` を立てられる
+  （`consent.required` / `consent.notice-hash`）。
+- 「拒否したら MOD を抜くしかない」が仕様。**抜けば導入必須チェックで入室を断られる**
+  （`enforce.mode`）ので、逃げ道にはならない。
+
+### 5.8 証拠を OP の手元で見る
+
+サーバーに保存した画面は、**指示を出した OP のクライアントへ自動で転送**される
+（S2C `mcsa:shot`、16 KiB 断片）。
+
+- 転送先は `Player#getListeningPluginChannels()` に `mcsa:shot` がある相手だけ
+  ＝ **OP 用 MOD（`mcsa-admin`）を入れている OP**。入れていない OP には送らない。
+- 受け取った側は `.minecraft/mcsa-evidence/` に保存し、ゲーム内ビューア
+  （`EvidenceScreen`：Open image / Open folder / Close）を開く。
+  設定 `config/mcsa/admin.json` の `autoOpen` で OS のビューアも自動で開く。
+- `/ac evidence <player> [n]` で保存済みの n 番目（既定は最新）を自分の画面に取り寄せられる。
+- サーバー側の原本と `evidence-log.txt`（追記専用の監査ログ）はそのまま残る。
+  手元コピーは「その場で確認する用」。
+
 ## 6. 行動検知（サーバー側）
 
 `CheckManager` に実装してあるもの。すべて `config.yml` の `checks.*` で ON/OFF と閾値を変えられる。
