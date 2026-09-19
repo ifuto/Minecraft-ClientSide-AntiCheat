@@ -10,4 +10,4 @@ artifact_path: client/build/libs/*.jar
 java: 25
 
 # ビルド番号（この行を変えると push トリガーが走る）
-build: 5
+build: 6

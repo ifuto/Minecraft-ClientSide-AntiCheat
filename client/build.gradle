@@ -203,7 +203,7 @@ tasks.register('obfuscateJar', JavaExec) {
     mainClass = 'proguard.ProGuard'
 
     doFirst {
-        def libs = ["${System.getProperty('java.home')}/jmods/java.base.jmod(!**.jar;!module-info.class)".toString()]
+        def libs = javaLibraryJars()
         sourceSets.main.compileClasspath.files.each {
             if (it.exists()) libs << it.absolutePath
         }
@@ -217,6 +217,50 @@ tasks.register('obfuscateJar', JavaExec) {
         // 難読化でエントリーポイントが消えていないことを確認する
         verifyModJar(outJar.get().asFile)
     }
+}
+
+/**
+ * ProGuard に渡す Java 標準ライブラリを探す。
+ *
+ * 1. ${java.home}/jmods/*.jmod          （通常の JDK）
+ * 2. jimage で lib/modules を展開       （jmods を同梱しない JDK イメージ向け）
+ * 3. どちらもない場合は空               （proguard.pro の -dontwarn に任せる）
+ */
+def javaLibraryJars() {
+    def javaHome = new File(System.getProperty('java.home'))
+    def jmods = new File(javaHome, 'jmods')
+    if (jmods.isDirectory()) {
+        def found = jmods.listFiles().findAll { it.name.endsWith('.jmod') }
+                .collect { "${it.absolutePath}(!**.jar;!module-info.class)".toString() }
+        if (!found.isEmpty()) {
+            logger.lifecycle("[MCSA] ProGuard: jmods を {} 件使います", found.size())
+            return found
+        }
+    }
+
+    def jimage = new File(new File(javaHome, 'bin'), 'jimage')
+    def extracted = layout.buildDirectory.dir('proguard-jrt').get().asFile
+    if (jimage.canExecute() && new File(extracted, 'java.base').isDirectory()) {
+        logger.lifecycle("[MCSA] ProGuard: 展開済みの jimage を使います ({})", extracted)
+        return [extracted.absolutePath]
+    }
+    if (jimage.canExecute()) {
+        logger.lifecycle("[MCSA] ProGuard: jmods がないため jimage で lib/modules を展開します")
+        extracted.mkdirs()
+        def result = providers.exec { spec ->
+            spec.commandLine jimage.absolutePath, 'extract', '--dir', extracted.absolutePath,
+                    new File(javaHome, 'lib/modules').absolutePath
+            spec.ignoreExitValue = true
+        }.result.get()
+        if (result.exitValue == 0 && new File(extracted, 'java.base').isDirectory()) {
+            return [extracted.absolutePath]
+        }
+        logger.warn("[MCSA] jimage の展開に失敗しました (exit={})", result.exitValue)
+    }
+
+    logger.warn('[MCSA] Java 標準ライブラリを ProGuard に渡せません。' +
+            'jmods を同梱する JDK でビルドしてください（-dontwarn で続行します）')
+    return []
 }
 
 if (obfuscateEnabled) {

@@ -1,1 +1,189 @@
-# Minecraft-ClientSide-AntiCheat
+# Minecraft Client-Side AntiCheat (MCSA)
+
+クライアント MOD（Fabric）とサーバープラグイン（Paper）を **両方入れて** 使うアンチチート。
+
+- 導入者の **MOD / リソースパック / シェーダーの一覧** を OP がコマンドで確認できる
+- MOD の改ざん・**MOD 名の偽装**・jar 差し替え・注入系の検知
+- サーバー権限で測る行動検知（リーチ、キルオーラ、自動クリック、高速破壊、浮遊、速度）
+- 導入必須は「全員」か「指定した人だけ」を選べる（既定は **指定した人だけ**）
+
+> **前提**: クライアントとサーバーは同じ権限なので、「クライアントの自己申告」を
+> 数学的に信じる方法はありません。MCSA は ①申告させて状況証拠にする、
+> ②サーバーに届いたパケットそのものを測る、の 2 段構えです。判定の重みは常に ② > ①。
+> 詳細は [`docs/DESIGN.md`](docs/DESIGN.md)。
+
+---
+
+## 構成
+
+| 成果物 | 場所 | 説明 |
+|--------|------|------|
+| `mcsa-client-<ver>.jar`  | `client/build/libs/` | Fabric MOD（プレイヤー側） |
+| `mcsa-server-<ver>.jar`  | `server/build/libs/` | Paper プラグイン（サーバー側） |
+
+対応: Minecraft **1.21.11** / Fabric Loader 0.19.5 / Fabric API 0.141.6 / Paper 1.21.11。
+実行には Java 21（**ビルド**には JDK 25 + Gradle 9.7.1 が必要。下記参照）。
+
+---
+
+## 1. ビルド
+
+### GitHub Actions で（推奨）
+
+このリポジトリの `Multi Build` / `Multi Build (Paper)` ワークフローが
+[`trigger.md`](trigger.md) の値を読んでビルドする。
+
+```markdown
+# trigger.md
+workdir: client                      # client か server
+artifact_path: client/build/libs/*.jar
+java: 25                             # Loom 1.18 は JDK 25 が必要
+```
+
+`trigger.md` を編集して push すると両ワークフローが走る（成果物は Actions の Artifacts へ）。
+
+| 対象 | workdir | artifact_path |
+|------|---------|---------------|
+| クライアント MOD | `client` | `client/build/libs/*.jar` |
+| サーバープラグイン | `server` | `server/build/libs/*.jar` |
+
+サーバープラグインは `server_test: true` を追加すると、CI 上で実際に Paper を起動して
+プラグインが Enable されるかまで確認する。
+
+### ローカルで
+
+```bash
+./gradlew -p client build     # → client/build/libs/mcsa-client-1.0.0.jar
+./gradlew -p server build     # → server/build/libs/mcsa-server-1.0.0.jar
+```
+
+- `./gradlew` は Gradle 9.7.1 を自動ダウンロードする軽量ブートストラップ
+  （`gradle/wrapper/gradle-wrapper.jar` はバイナリなので Git に入れていない。
+  正式な Wrapper が欲しければ `gradle wrapper --gradle-version 9.7.1` を実行）。
+- クライアントのビルドには **JDK 25** が必要（Fabric Loom 1.18.2 の要件）。
+  生成される jar のバイトコードは Java 21 向けなので、プレイヤー側は Java 21 のままで動く。
+
+### 難読化
+
+クライアントは既定で **ProGuard による難読化**（クラス／メソッド／フィールドのリネーム）を行う。
+
+```bash
+./gradlew -p client build                     # mcsa.obfuscate=true（既定）
+./gradlew -p client build -Pmcsa.obfuscate=false   # 無効化
+```
+
+- 通常版: `mcsa-client-1.0.0.jar`
+- 難読化版: `mcsa-client-1.0.0-obf.jar` ← **配布するのはこちら**
+- 設定は [`client/proguard.pro`](client/proguard.pro)。エントリーポイントと
+  `CustomPayload` 実装は `-keep` してあり、ビルド時に `verifyJar` タスクが
+  「jar にエントリーポイントのクラスが入っているか」を検証する。
+
+### HMAC 鍵
+
+ビルドのたびに 32 バイトの鍵を生成（`client/hmac-key.txt` があれば再利用）し、
+XOR マスクした int 配列としてソースを生成する（平文は jar に残らない）。
+
+鍵はビルドログと `client/build/libs/mcsa-client-<ver>-hmac-key.txt` に出るので、
+その値をサーバーの `plugins/MCSA/config.yml` → `hmac.key` に貼る。
+
+```yaml
+hmac:
+  enabled: true
+  key: "0f3a…（64 文字の 16 進）"
+```
+
+鍵が未設定だとレポートの改ざんを検知できず、全レポートが `UNVERIFIED` 扱いになる
+（起動時に WARNING が出る）。
+
+---
+
+## 2. インストール
+
+**サーバー**: `mcsa-server-<ver>.jar` を `plugins/` へ。起動すると `plugins/MCSA/config.yml` が出る。
+
+**クライアント**: `mcsa-client-<ver>-obf.jar` を `mods/` へ（Fabric Loader + Fabric API 必須）。
+初回起動で `config/mcsa/client.json` が作られる。
+
+---
+
+## 3. 使い方
+
+### 導入必須の対象を決める
+
+`enforce.mode` は既定で `LISTED`（＝指定した人だけ必須）。
+
+```
+/ac policy mode LISTED          # OFF / LISTED / EVERYONE
+/ac policy require add Steve    # Steve だけ必須にする
+/ac policy require list
+```
+
+入室後 5 秒（`enforce.grace-ticks`）で HELLO が届いていなければ
+`enforce.action`（既定 `KICK`）を実行する。
+
+### 一覧を見る
+
+```
+/ac status                 # オンライン全員の導入状況
+/ac mods Steve             # MOD 一覧（判定ラベル付き）
+/ac packs Steve            # リソースパック
+/ac shaders Steve          # シェーダー
+/ac info Steve             # 整合性・フラグ・違反レベル
+/ac flags Steve            # 検知履歴
+/ac refresh Steve          # レポート再要求
+```
+
+すべて [`docs/COMMANDS.md`](docs/COMMANDS.md)。権限は `mcsa.admin`（既定 OP）。
+
+### MOD 名の偽装を捕まえる（ピン留め）
+
+```
+/ac policy pin Steve sodium        # 信頼できるプレイヤーの sodium のハッシュを固定
+/ac policy pin-client Steve        # 配布しているクライアント jar のハッシュを固定
+```
+
+以降、`sodium` を名乗るのにハッシュが違う MOD は `MOD_ID_SPOOF:sodium`（critical）。
+`fabric.mod.json` を持たない jar は `JAR_WITHOUT_MANIFEST:<file>`（critical）。
+
+---
+
+## 4. 注意
+
+- **告知する**: この MOD はプレイヤーの PC から MOD / リソースパック / シェーダーの一覧を
+  サーバーへ送る。MOTD や Discord で必ず案内すること。
+  送る範囲はプレイヤー側で絞れる（`docs/PRIVACY.md`）。
+- **いきなりキックしない**: `checks.cancel` と `checks.kick-vl` は既定で無効。
+  まずアラートだけ出して誤検知を確認すること。
+- **自己申告は証拠ではない**: `docs/DESIGN.md` §5 に「各対策の破られ方」を書いてある。
+
+---
+
+## 5. リポジトリ
+
+```
+client/                    Fabric MOD（MC 1.21.11 / Yarn / Java 21）
+server/                    Paper プラグイン（paper-api 1.21.11）
+docs/DESIGN.md             設計・脅威モデル・改ざん対策の各層と、その破られ方
+docs/PROTOCOL.md           通信プロトコル（チャンネル、バイト配置、JSON、HMAC）
+docs/COMMANDS.md           /ac コマンド一覧
+docs/PRIVACY.md            収集する情報・しない情報・プレイヤー側の設定
+tools/verify_protocol.py   クライアント／サーバーの契約の整合チェック
+ci/build-check.yml         追加 CI（.github/workflows/ にコピーして使う）
+trigger.md                 Multi Build ワークフローへの引数
+```
+
+### 開発時に確認していること
+
+```bash
+python3 tools/verify_protocol.py    # チャンネル名・レポート JSON キー・config キーの整合
+./gradlew -p client build           # コンパイル + verifyJar（成果物の中身）
+./gradlew -p server build           # コンパイル
+```
+
+`ci/build-check.yml` はこの 3 つを 1 本にまとめたもの。
+GitHub App の権限制約で `.github/workflows/` へは push できないため、
+使う場合は手動でコピーしてほしい。
+
+## ライセンス
+
+MIT
