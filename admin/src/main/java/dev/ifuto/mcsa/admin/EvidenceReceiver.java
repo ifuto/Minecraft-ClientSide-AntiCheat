@@ -87,17 +87,17 @@ public final class EvidenceReceiver {
         boolean text = kind != null && kind == ShotPayload.KIND_NOTE;
         Path file = save(name, data, text);
         if (file == null) {
-            notify("§c[MCSA] 証拠を保存できませんでした（" + data.length + " bytes）", null);
+            notify("[MCSA] 証拠を保存できませんでした（" + data.length + " bytes）", null, 0xFF5555);
             return;
         }
         if (text) {
             String body = new String(data, java.nio.charset.StandardCharsets.UTF_8);
-            notify("§e[MCSA] テキスト証拠 §7" + file.getFileName() + ": §f"
-                    + (body.length() > 300 ? body.substring(0, 300) + "…" : body), file);
+            notify("[MCSA] テキスト証拠 " + file.getFileName() + ": "
+                    + (body.length() > 300 ? body.substring(0, 300) + "…" : body), file, 0xFFFF55);
             return;
         }
-        notify("§a[MCSA] 画面を受信しました §7" + file.getFileName() + " (" + data.length
-                + " bytes) §8クリックで開く", file);
+        notify("[MCSA] 画面を受信しました " + file.getFileName() + " (" + data.length
+                + " bytes) クリックで開く", file, 0x55FF55);
         if (AdminConfig.get().showScreen) {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client != null) {
@@ -161,23 +161,26 @@ public final class EvidenceReceiver {
     }
 
     /** チャットに出す（{@code link} があればクリックで開ける） */
-    public static void notify(String message, Path link) {
+    public static void notify(String message, Path link, int color) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) {
             return;
         }
+        final Path linkPath = link;
+        final int rgb = color;
         client.execute(() -> {
             try {
                 if (client.inGameHud == null) {
                     return;
                 }
                 MutableText text = Text.literal(message);
-                if (link != null) {
+                if (linkPath != null) {
                     text = text.setStyle(text.getStyle()
                             .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE,
-                                    link.toAbsolutePath().toString()))
-                            .withUnderline(true)
-                            .withColor(TextColor.fromRgb(0x55FFFF)));
+                                    linkPath.toAbsolutePath().toString()))
+                            .withUnderline(true));
+                } else {
+                    text = text.setStyle(text.getStyle().withColor(TextColor.fromRgb(rgb)));
                 }
                 client.inGameHud.getChatHud().addMessage(text);
             } catch (Throwable ignored) {
