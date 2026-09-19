@@ -1,0 +1,153 @@
+# ===========================================================================
+# MCSA - Minecraft Client-Side AntiCheat  サーバープラグイン設定
+# ===========================================================================
+# 注意:
+#   クライアントから送られてくるレポート（MOD 一覧など）は「自己申告」です。
+#   同じ権限を持つ相手は原理的に偽装できるため、ここに書かれた判定は
+#   「証拠の重み付け」であって証明ではありません。確定させるには
+#   checks.* の行動検知と突き合わせてください。
+# ===========================================================================
+
+# クライアントMODとの通信プロトコル版（両側で一致させること）
+protocol: 1
+
+# ---------------------------------------------------------------------------
+# レポートの改ざん検知（HMAC-SHA256）
+# ---------------------------------------------------------------------------
+hmac:
+  enabled: true
+  # クライアントのビルド時に生成された鍵（build/libs/mcsa-client-<ver>-hmac-key.txt）
+  # 空のときは検証できないため、すべてのレポートが UNVERIFIED 扱いになる。
+  key: ""
+  # 検証に失敗したレポートの扱い
+  #   FLAG   : レポートは受理して UNVERIFIED フラグを立てる（既定）
+  #   REJECT : レポートを捨てる（導入必須判定では「未申告」扱いになる）
+  on-invalid: FLAG
+
+# ---------------------------------------------------------------------------
+# 導入必須ポリシー
+# ---------------------------------------------------------------------------
+enforce:
+  # OFF      : 導入を求めない（レポートは受け取る）
+  # LISTED   : required-players に載っているプレイヤーだけ導入必須（既定）
+  # EVERYONE : 全員導入必須
+  mode: LISTED
+  # LISTED の対象。プレイヤー名または UUID。/ac policy require add <name> でも追加できる
+  required-players: []
+  # 入室してから導入有無を判定するまでの猶予（tick, 20tick = 1秒）
+  grace-ticks: 100
+  # 未導入時の処分: KICK / WARN / LOG
+  action: KICK
+  kick-message: "§cこのサーバーでは MCSA クライアントMODの導入が必要です。\n§7導入方法はこのサーバーの案内を確認してください。"
+  warn-message: "§e[MCSA] §7あなたは導入必須の対象ですが、MODが検出されませんでした。"
+
+# ---------------------------------------------------------------------------
+# チャレンジ（レポート要求）
+# ---------------------------------------------------------------------------
+challenge:
+  # 入室から何 tick 後にチャレンジを送るか（クライアントのチャンネル登録待ち）
+  delay-ticks: 20
+  # 定期再要求の間隔（tick）。0 で無効
+  interval-ticks: 6000
+  # 収集を求める項目のビットマスク
+  #   1=MOD 2=リソースパック 4=シェーダー 8=JVM引数
+  collect-flags: 15
+  # クライアントに存在確認させるクラス名（MOD一覧に出ない注入の検知用）
+  # クライアントMODを更新せずに検知対象を増やせる
+  probe-classes: []
+
+# ---------------------------------------------------------------------------
+# クライアント jar そのものの検証
+# ---------------------------------------------------------------------------
+client:
+  # 配布したクライアント jar の SHA-256（/ac policy pin-client <player> で記録できる）
+  # 空なら照合しない
+  pinned-jar-sha256: ""
+  # true にすると、難読化されていないビルドを弾く（配布ビルドは -Pmcsa.obfuscate=true で作ること）
+  require-obfuscated: false
+
+# ---------------------------------------------------------------------------
+# MOD / リソースパック / シェーダーの判定
+# ---------------------------------------------------------------------------
+policy:
+  # 見つけたら即アウト（MOD id。ワイルドカード * 可）
+  banned-mods:
+    - meteor-client
+    - wurst
+    - liquidbounce
+    - impact
+    - forcecraft
+    - xray
+  # 見つけたら警告（自動ツール系など、サーバーごとに判断が分かれるもの）
+  suspicious-mods:
+    - baritone
+    - minimap
+    - xaerominimap
+    - litematica
+    - freecam
+    - click-assist
+  # 明示的に許可する id（unknown 扱いを避けたいとき）
+  allowed-mods: []
+  # true にすると、どのリストにも無い MOD を UNKNOWN_MOD として記録する
+  flag-unknown-mods: false
+  banned-shaders: []
+  banned-resource-packs: []
+  # critical フラグが出たときの処分: KICK / FLAG / LOG
+  on-banned: KICK
+  banned-kick-message: "§cこのサーバーで許可されていないMOD/パックが検出されました。"
+  # MOD id の偽装検知に使うピン留めは pins.yml（/ac policy pin で生成）
+
+# ---------------------------------------------------------------------------
+# アラート
+# ---------------------------------------------------------------------------
+alerts:
+  console: true
+  broadcast: true
+  broadcast-permission: mcsa.alerts
+  # Discord などの Webhook URL（空で無効）。レポートの JSON 要約を POST する
+  webhook: ""
+
+storage:
+  # plugins/MCSA/reports/<uuid>.json にレポートを保存する
+  save-reports: true
+
+# ---------------------------------------------------------------------------
+# サーバー側の行動検知
+#   クライアントの自己申告が偽装されていても、こちらはサーバー権限で観測できる。
+#   誤検知を避けるため、初期値はかなり緩めにしてある。まず LOG/アラートで
+#   様子を見てから cancel や kick-vl を有効化すること。
+# ---------------------------------------------------------------------------
+checks:
+  enabled: true
+  # イベントをキャンセルして挙動を打ち消すか（reach のみ対象）
+  cancel: false
+  # この違反レベルでアラート
+  alert-vl: 5
+  # この違反レベルでキック（0 = キックしない）
+  kick-vl: 0
+  kick-message: "§c不正な挙動が検出されました (MCSA)"
+  reach:
+    enabled: true
+    max-reach: 3.1
+    ping-compensation: true
+  killaura:
+    enabled: true
+    max-angle: 75.0
+    max-hits-per-second: 16
+  autoclicker:
+    enabled: true
+    max-cps: 20
+    # クリック間隔のばらつきがこの値未満なら機械的とみなす（ミリ秒）
+    min-interval-deviation-ms: 8.0
+    min-samples: 12
+  fastbreak:
+    enabled: true
+    max-breaks-per-second: 20
+  fly:
+    enabled: true
+    min-air-ticks: 30
+  speed:
+    enabled: true
+    # 1 tick あたりの水平移動量（スプリントで約 0.28）
+    max-per-tick: 0.6
+    max-ticks: 10

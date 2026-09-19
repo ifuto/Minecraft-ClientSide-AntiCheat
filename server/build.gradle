@@ -1,0 +1,47 @@
+plugins {
+    id 'java'
+}
+
+version = project.findProperty('mcsa_version') ?: '1.0.0'
+group = 'dev.ifuto.mcsa'
+base.archivesName = 'mcsa-server'
+
+def mcVersion = project.findProperty('minecraft_version') ?: '1.21.11'
+def paperApi = project.findProperty('paper_api_version') ?: "${mcVersion}-R0.1-SNAPSHOT"
+def apiVersion = project.findProperty('plugin_api_version') ?: (mcVersion.toString().split('\\.')[0..1].join('.'))
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://repo.papermc.io/repository/maven-public/' }
+}
+
+dependencies {
+    compileOnly "io.papermc.paper:paper-api:${paperApi}"
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+}
+
+processResources {
+    def v = project.version
+    def api = apiVersion
+    inputs.property 'version', v
+    inputs.property 'apiVersion', api
+    filesMatching('plugin.yml') {
+        expand 'version': v, 'apiVersion': api
+    }
+}
+
+tasks.register('printCoordinates') {
+    doLast {
+        logger.lifecycle("[MCSA] paper-api=${paperApi} api-version=${apiVersion} version=${version}")
+    }
+}
+tasks.named('build') { dependsOn 'printCoordinates' }

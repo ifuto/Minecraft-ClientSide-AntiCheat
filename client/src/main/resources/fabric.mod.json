@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "mcsa",
+  "version": "${version}",
+  "name": "MCSA Client Guard",
+  "description": "サーバーが求めたときに、導入MOD・リソースパック・シェーダーの一覧を自己申告するクライアントMOD。判定と処分はサーバー側プラグイン(MCSA)が行います。送信範囲は config/mcsa/client.json で制限できます。",
+  "authors": [
+    "ifuto"
+  ],
+  "contact": {
+    "sources": "https://github.com/ifuto/Minecraft-ClientSide-AntiCheat"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.ifuto.mcsa.client.McsaClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

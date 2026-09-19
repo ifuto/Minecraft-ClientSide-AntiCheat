@@ -1,0 +1,166 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+    id 'java'
+}
+
+version = project.findProperty('mcsa_version') ?: '1.0.0'
+group = 'dev.ifuto.mcsa'
+base.archivesName = 'mcsa-client'
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    proguardCp
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    proguardCp 'com.guardsquare:proguard-gradle:7.6.1'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+}
+
+processResources {
+    def v = project.version
+    inputs.property 'version', v
+    filesMatching('fabric.mod.json') {
+        expand 'version': v
+    }
+    filesMatching('assets/mcsa/lang/*.json') {
+        expand 'version': v
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HMAC 鍵素材の生成
+//   レポートの改ざん検知に使う 32 バイト鍵をビルドごとに生成し、
+//   XOR マスクを掛けた int 配列として Java ソースを生成する。
+//   平文の文字列定数は jar に残らない（strings で拾えない）。
+//
+//   生成された鍵は
+//     - client/hmac-key.txt          （次回ビルドで再利用。Git 管理外）
+//     - build/libs/*-hmac-key.txt    （成果物と一緒に配布。サーバ設定に貼る）
+//   に出力される。サーバ側 config.yml の hmac.key に同じ値を設定すること。
+// ---------------------------------------------------------------------------
+def hmacKeyFile = layout.projectDirectory.file('hmac-key.txt')
+def keySrcDir = layout.buildDirectory.dir('generated/sources/mcsaKey/java')
+
+def toHex(byte[] b) {
+    def sb = new StringBuilder(b.length * 2)
+    for (byte x : b) sb.append(String.format('%02x', x))
+    return sb.toString()
+}
+
+def fromHex(String s) {
+    def out = new byte[s.length() / 2 as int]
+    for (int i = 0; i < out.length; i++) {
+        out[i] = (byte) Integer.parseInt(s.substring(i * 2, i * 2 + 2), 16)
+    }
+    return out
+}
+
+tasks.register('generateKeyMaterial') {
+    outputs.dir(keySrcDir)
+    doLast {
+        def rnd = new java.security.SecureRandom()
+        byte[] key
+        def f = hmacKeyFile.asFile
+        if (f.exists() && f.text.trim().length() == 64) {
+            key = fromHex(f.text.trim())
+            logger.lifecycle('[MCSA] 既存の HMAC 鍵を再利用します: {}', f)
+        } else {
+            key = new byte[32]
+            rnd.nextBytes(key)
+            f.text = toHex(key) + '\n'
+            logger.lifecycle('[MCSA] 新しい HMAC 鍵を生成しました: {}', f)
+        }
+
+        byte[] mask = new byte[32]
+        rnd.nextBytes(mask)
+        def xored = new byte[32]
+        for (int i = 0; i < 32; i++) {
+            xored[i] = (byte) (key[i] ^ mask[i])
+        }
+
+        def pkgDir = new File(keySrcDir.get().asFile, 'dev/ifuto/mcsa/client/gen')
+        pkgDir.mkdirs()
+        def src = new StringBuilder()
+        src.append('package dev.ifuto.mcsa.client.gen;\n\n')
+        src.append('/** ビルド時に生成される鍵素材。ソースツリーには存在しない。 */\n')
+        src.append('public final class KeyMaterial {\n')
+        src.append('    private static final int[] A = {').append(xored.collect { (it & 0xFF) as int }.join(', ')).append('};\n')
+        src.append('    private static final int[] B = {').append(mask.collect { (it & 0xFF) as int }.join(', ')).append('};\n')
+        src.append('    private static byte[] cached;\n\n')
+        src.append('    private KeyMaterial() {}\n\n')
+        src.append('    public static synchronized byte[] key() {\n')
+        src.append('        if (cached == null) {\n')
+        src.append('            cached = new byte[A.length];\n')
+        src.append('            for (int i = 0; i < A.length; i++) {\n')
+        src.append('                cached[i] = (byte) (A[i] ^ B[i]);\n')
+        src.append('            }\n')
+        src.append('        }\n')
+        src.append('        return cached.clone();\n')
+        src.append('    }\n')
+        src.append('}\n')
+        new File(pkgDir, 'KeyMaterial.java').setText(src.toString(), 'UTF-8')
+
+        def libs = layout.buildDirectory.dir('libs').get().asFile
+        libs.mkdirs()
+        new File(libs, "${base.archivesName.get()}-${version}-hmac-key.txt").text = toHex(key) + '\n'
+        logger.lifecycle('[MCSA] HMAC 鍵 (サーバの config.yml に設定する値): {}', toHex(key))
+    }
+}
+
+sourceSets.main.java.srcDir(keySrcDir)
+tasks.named('compileJava') { dependsOn 'generateKeyMaterial' }
+
+// ---------------------------------------------------------------------------
+// 難読化（ProGuard）  -Pmcsa.obfuscate=true で build に組み込まれる
+//   Loom の remapJar 出力（intermediary 名になった jar）に対して掛ける。
+// ---------------------------------------------------------------------------
+def obfuscateEnabled = (project.findProperty('mcsa.obfuscate') ?: 'false').toString().toBoolean()
+
+tasks.register('obfuscateJar', JavaExec) {
+    group = 'build'
+    description = 'remapJar の出力に ProGuard を適用する'
+    dependsOn 'remapJar'
+
+    def inJar = layout.buildDirectory.file("libs/${base.archivesName.get()}-${version}.jar")
+    def outJar = layout.buildDirectory.file("libs/${base.archivesName.get()}-${version}-obf.jar")
+    inputs.file(inJar)
+    outputs.file(outJar)
+
+    classpath = configurations.proguardCp
+    mainClass = 'proguard.ProGuard'
+
+    doFirst {
+        def libs = ["${System.getProperty('java.home')}/jmods/java.base.jmod(!**.jar;!module-info.class)".toString()]
+        sourceSets.main.compileClasspath.files.each {
+            if (it.exists()) libs << it.absolutePath
+        }
+        def a = ['-injars', inJar.get().asFile.absolutePath,
+                 '-outjars', outJar.get().asFile.absolutePath]
+        libs.each { a << '-libraryjars' << it }
+        a << "@${file('proguard.pro').absolutePath}"
+        args = a
+    }
+}
+
+if (obfuscateEnabled) {
+    tasks.named('build') { dependsOn 'obfuscateJar' }
+    logger.lifecycle('[MCSA] 難読化を有効化しました (build/libs/*-obf.jar)')
+}

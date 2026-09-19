@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+build-log.txt
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+
+# Loom / Fabric
+run/
+client/run/
+remappedSrc/
+
+# Paper テストサーバー
+server/run/
+server/plugins/
+
+# ビルド時に生成される秘密鍵（配布物と一緒に扱うこと。Git には入れない）
+hmac-key.txt
+
+# OS
+.DS_Store
+Thumbs.db

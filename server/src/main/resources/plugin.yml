@@ -1,0 +1,34 @@
+name: MCSA
+version: '${version}'
+main: dev.ifuto.mcsa.server.McsaPlugin
+api-version: '${apiVersion}'
+description: クライアントMOD(MCSA Client Guard)と連携するアンチチート。導入MOD/リソースパック/シェーダーの照会と、サーバー側の行動検知を行う。
+author: ifuto
+website: https://github.com/ifuto/Minecraft-ClientSide-AntiCheat
+
+commands:
+  ac:
+    description: MCSA 管理コマンド
+    usage: |-
+      /ac status
+      /ac info <player>
+      /ac mods <player>
+      /ac packs <player>
+      /ac shaders <player>
+      /ac flags <player>
+      /ac refresh <player>
+      /ac kick <player> [reason]
+      /ac policy ...
+      /ac reload
+    aliases: [anticheat, mcsa]
+
+permissions:
+  mcsa.admin:
+    description: MCSA の管理コマンドを使える（OP 既定）
+    default: op
+  mcsa.alerts:
+    description: 検知アラートを受け取る
+    default: op
+  mcsa.bypass:
+    description: 行動検知と導入必須の対象外になる
+    default: false

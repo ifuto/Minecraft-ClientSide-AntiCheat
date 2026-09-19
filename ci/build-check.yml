@@ -1,0 +1,133 @@
+name: Build Check
+
+# client/（Fabric MOD）と server/（Paper プラグイン）を実際にコンパイルする。
+# リポジトリの Multi Build / Multi Build (Paper) は gradlew を前提にしているが、
+# gradle-wrapper.jar はバイナリなので Git に入れていない。ここでは Gradle を
+# インストールしてビルドし、ついでに wrapper を生成して成果物として上げる。
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "client/**"
+      - "server/**"
+      - "tools/**"
+      - "gradle.properties"
+      - ".github/workflows/build-check.yml"
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      obfuscate:
+        description: "難読化ビルドも検証する"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_VERSION: "9.5.1"
+
+jobs:
+  contract:
+    name: 契約チェック（クライアント／サーバーの整合性）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python3 tools/verify_protocol.py
+
+  client:
+    name: Client MOD（Fabric）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: ビルド
+        working-directory: client
+        run: gradle build --no-daemon --stacktrace
+
+      - name: 難読化ビルド
+        working-directory: client
+        run: gradle obfuscateJar --no-daemon --stacktrace
+
+      - name: 成果物の中身を確認
+        working-directory: client
+        run: |
+          set -euo pipefail
+          ls -l build/libs
+          # 通常ビルドに fabric.mod.json とエントリーポイントが入っていること
+          unzip -l build/libs/mcsa-client-*.jar | grep -E 'fabric\.mod\.json|McsaClient\.class|KeyMaterial\.class'
+          # 難読化ビルドでパッケージ名が変わっていること（＝リネームが効いている）
+          unzip -l build/libs/mcsa-client-*-obf.jar | grep -c 'dev/ifuto/mcsa/client/McsaClient.class' || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcsa-client
+          path: |
+            client/build/libs/*.jar
+            client/build/libs/*hmac-key.txt
+          if-no-files-found: error
+
+  server:
+    name: Server Plugin（Paper）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: ビルド
+        working-directory: server
+        run: gradle build --no-daemon --stacktrace
+
+      - name: plugin.yml を確認
+        working-directory: server
+        run: |
+          set -euo pipefail
+          ls -l build/libs
+          unzip -p build/libs/mcsa-server-*.jar plugin.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcsa-server
+          path: server/build/libs/*.jar
+          if-no-files-found: error
+
+  wrapper:
+    name: Gradle Wrapper 生成（既存の Multi Build 用）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+      - name: ルートに wrapper を生成
+        run: gradle wrapper --gradle-version "$GRADLE_VERSION" --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gradle-wrapper
+          path: |
+            gradlew
+            gradlew.bat
+            gradle/wrapper/**
+          if-no-files-found: error
