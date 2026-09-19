@@ -1,43 +1,42 @@
 #!/usr/bin/env bash
-# ビルドログのエラー行を GitHub Checks のアノテーションに変換する。
+# Gradle のビルドログを GitHub Actions のチェックアノテーションに変換する。
 #
-#   bash ci/annotate.sh <build-log>
+# 使い方: ci/annotate.sh <ログファイル>
 #
-# Actions の生ログは blob 経由でしか取れない環境があるため、
-# 失敗理由をアノテーション（Checks API で普通に読める）に乗せておく。
-# javac の "file.java:12: error: ..." 形式は file / line 付きで出す。
+# アノテーションは 1 ステップ 10 件までしか残らない（超えると古いものから消える）ので、
+# 「一番効く行」を最後に出す。GitHub は後ろのものを残すため。
+#   1) ログ末尾（保険）
+#   2) ProGuard / Gradle / JVM のエラー本文
+#   3) javac のエラー（ファイルと行が分かるので最優先で残したい）
 set -uo pipefail
 
 LOG="${1:-}"
-if [ -z "$LOG" ] || [ ! -f "$LOG" ]; then
-  echo "::error::ビルドログが見つかりません: ${LOG:-<未指定>}"
+if [[ ! -f "$LOG" ]]; then
+  echo "::error::ログが見つかりません: $LOG"
+  ls -lR */build/libs 2>/dev/null || true
   exit 0
 fi
 
-esc() {
-  local s="$1"
-  s="${s//%/%25}"
-  s="${s//$'\r'/%0D}"
-  s="${s//$'\n'/%0A}"
-  printf '%s' "$s"
-}
+esc() { local s="$1"; s="${s//%/%25}"; s="${s//$'\r'/%0D}"; s="${s//$'\n'/%0A}"; printf '%s' "$s"; }
 
-emit() {
-  local line="$1"
-  if [[ "$line" =~ (.*\.(java|kt)):([0-9]+):[0-9]*:?[[:space:]]?e(rror)?:[[:space:]](.*) ]]; then
-    local file="${BASH_REMATCH[1]#"$GITHUB_WORKSPACE/"}"
-    echo "::error file=$file,line=${BASH_REMATCH[3]}::$(esc "${BASH_REMATCH[5]}")"
-  else
-    echo "::error::$(esc "$line")"
-  fi
-}
+# 1) 保険: ログ末尾（短め）
+tail -n 12 "$LOG" | while IFS= read -r line; do
+  [[ -n "$line" ]] && echo "::error::$(esc "$line")"
+done
 
-PAT="error:|FAILED|Caused by|Exception|Could not resolve|Unsupported|cannot find symbol|Error occurred while enabling"
+# 2) ProGuard / Gradle / JVM のエラー本文
+grep -aiE '(^|[^A-Za-z])(Error|FAILURE|FAILED|Caused by|Exception|Unexpected error|Can.t |Unable to|cannot (find|access)|does not (exist|override)|No such|OutOfMemory|Could not (find|resolve|download)|Execution failed)' "$LOG" \
+  | grep -av '^\s*at ' | grep -av 'Note:' | tail -n 8 \
+  | while IFS= read -r line; do echo "::error::$(esc "$line")"; done
 
-if grep -aqE "$PAT" "$LOG"; then
-  # javac のエラー本体（ファイル名付き）を優先し、その後に概要を足す
-  grep -aE '\.(java|kt):[0-9]+:' "$LOG" | head -40 | while IFS= read -r line; do emit "$line"; done
-  grep -aE "$PAT" "$LOG" | grep -avE '\.(java|kt):[0-9]+:' | head -20 | while IFS= read -r line; do emit "$line"; done
-else
-  tail -40 "$LOG" | while IFS= read -r line; do emit "$line"; done
-fi
+# 3) javac: "path/to/File.java:123: error: message"
+grep -aE '^[^ ]*\.(java|kt):[0-9]+: (error|warning): ' "$LOG" | tail -n 8 \
+  | while IFS= read -r line; do
+      path="${line%%:*}"
+      rest="${line#*:}"
+      lineno="${rest%%:*}"
+      message="${line##*: }"
+      echo "::error file=${path},line=${lineno}::$(esc "$message")"
+    done
+
+exit 0
