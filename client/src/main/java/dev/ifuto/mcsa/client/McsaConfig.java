@@ -92,6 +92,12 @@ public final class McsaConfig {
 
     public static void load() {
         Path file = configFile();
+        // 初回起動（config/mcsa/client.json がまだ無い）は既定値から始める。
+        // ここで null のまま進むと下の instance.deniedServers で NPE になり、
+        // Minecraft が起動できなくなる（実機で発生: mclo.gs/jcCga82）。
+        if (instance == null) {
+            instance = new McsaConfig();
+        }
         try {
             if (Files.exists(file)) {
                 String json = Files.readString(file, StandardCharsets.UTF_8);
