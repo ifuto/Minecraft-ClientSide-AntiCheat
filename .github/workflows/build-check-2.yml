@@ -60,21 +60,28 @@ jobs:
 
       - name: ビルド（難読化込み）
         working-directory: client
-        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
+        run: |
+          set -o pipefail
+          gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
 
       - name: 成果物の中身を確認
         working-directory: client
         run: |
           set -euo pipefail
           ls -l build/libs
+          # mcsa-client-*.jar は難読化版 (-obf) にも一致するので、それぞれ 1 本ずつ選ぶ
+          PLAIN=$(ls build/libs/mcsa-client-*.jar | grep -v -- '-obf\.jar$' | head -1)
+          OBF=$(ls build/libs/mcsa-client-*-obf.jar | head -1)
+          echo "plain=$PLAIN obf=$OBF"
           # fabric.mod.json とエントリーポイントが入っていること
-          unzip -l build/libs/mcsa-client-*.jar | grep -E 'fabric\.mod\.json|McsaClient\.class|KeyMaterial\.class'
+          unzip -l "$PLAIN" | grep -E 'fabric\.mod\.json|McsaClient\.class|KeyMaterial\.class'
           # 難読化ビルドでも fabric.mod.json とエントリーポイントが残っていること
-          unzip -p build/libs/mcsa-client-*-obf.jar fabric.mod.json | head -20
+          unzip -l "$OBF" | grep -E 'fabric\.mod\.json|McsaClient\.class'
+          unzip -p "$OBF" fabric.mod.json | head -20
 
       - name: "失敗時: エラーをアノテーション化"
         if: failure()
-        run: bash ci/annotate.sh client/build-log.txt
+        run: bash ci/annotate.sh client/build-log.txt; ls -lR client/build/libs || true
 
       - uses: actions/upload-artifact@v4
         with:
@@ -99,17 +106,22 @@ jobs:
 
       - name: ビルド
         working-directory: admin
-        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
+        run: |
+          set -o pipefail
+          gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
 
-      - name: "失敗時: エラーをアノテーション化"
-        if: failure()
-        run: bash ci/annotate.sh admin/build-log.txt
+      - name: 成果物の一覧
+        run: ls -lR admin/build/libs || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: mcsa-admin
-          path: admin/build/libs/*.jar
+          path: admin/build/libs/
           if-no-files-found: error
+
+      - name: "失敗時: エラーをアノテーション化"
+        if: failure()
+        run: bash ci/annotate.sh admin/build-log.txt
 
   server:
     name: Server Plugin（Paper）
@@ -126,7 +138,9 @@ jobs:
 
       - name: ビルド
         working-directory: server
-        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
+        run: |
+          set -o pipefail
+          gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
 
       - name: plugin.yml を確認
         working-directory: server
