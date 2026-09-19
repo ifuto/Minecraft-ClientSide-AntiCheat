@@ -271,6 +271,12 @@ Minecraft 起動
 - 受け取った側は `.minecraft/mcsa-evidence/` に保存し、ゲーム内ビューア
   （`EvidenceScreen`：Open image / Open folder / Close）を開く。
   設定 `config/mcsa/admin.json` の `autoOpen` で OS のビューアも自動で開く。
+- ビューアは**画像そのものを描く**。`NativeImage.read(bytes)` →
+  `NativeImageBackedTexture(Supplier, NativeImage)` → `TextureManager#registerTexture`
+  でテクスチャ化し、`drawTexture(RenderPipeline, …)`（見つからなければ
+  `drawTexturedQuad(Identifier, …)`）で画面サイズに合わせて縮小描画する。
+  パイプライン定数名は版で変わるのでリフレクションで探し、
+  閉じるときは `destroyTexture` で解放する。
 - `/ac evidence <player> [n]` で保存済みの n 番目（既定は最新）を自分の画面に取り寄せられる。
 - サーバー側の原本と `evidence-log.txt`（追記専用の監査ログ）はそのまま残る。
   手元コピーは「その場で確認する用」。

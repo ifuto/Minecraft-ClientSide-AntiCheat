@@ -155,7 +155,9 @@
 - 画面はサーバーの `plugins/MCSA/evidence/` に保存される（原本＋監査ログ）。
 - さらに、**画面取得を指示した OP が OP 用 MOD を入れていれば、その OP のクライアントにも
   自動で転送される**（`mcsa:shot`）。受け取った側は `.minecraft/mcsa-evidence/` に保存し、
-  ゲーム内ビューアが開く。`/acadmin evidence <player>` でも取り寄せられる。
+  **ゲーム内のビューアに画像そのものが表示される**（画面サイズに合わせて縮小）。
+  `Open image` で OS のビューア、`Open folder` で保存先を開く。
+  `/acadmin evidence <player>` でも取り寄せられる。
 - 転送先の OP が OP 用 MOD を入れていない場合は転送されず、サーバー上のファイルを開くことになる。
 
 ## 権限

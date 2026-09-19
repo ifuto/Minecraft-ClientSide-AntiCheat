@@ -234,6 +234,15 @@ def main() -> int:
           and "ShotPayload" in client_text,
           "admin の ShotPayload / server の CH_SHOT のいずれかが欠けています")
 
+    screen = ADMIN / "dev/ifuto/mcsa/admin/EvidenceScreen.java"
+    screen_text = screen.read_text(encoding="utf-8") if screen.exists() else ""
+    check("OP 用 MOD にゲーム内の画像プレビューがある",
+          "NativeImage.read" in screen_text
+          and "NativeImageBackedTexture" in screen_text
+          and "drawTexturedQuad" in screen_text
+          and "destroyTexture" in screen_text,
+          "EvidenceScreen.java（テクスチャ登録→描画→解放）")
+
     check("COMMANDS.md に plugin.yml のコマンドが載っている", not missing_cmds,
               f"不足: {missing_cmds}" if missing_cmds else str(sorted(declared)))
 
