@@ -60,7 +60,9 @@ jobs:
 
       - name: ビルド（難読化込み）
         working-directory: client
-        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
+        run: |
+          set -o pipefail
+          gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
 
       - name: 成果物の中身を確認
         working-directory: client
@@ -104,7 +106,9 @@ jobs:
 
       - name: ビルド
         working-directory: admin
-        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
+        run: |
+          set -o pipefail
+          gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
 
       - name: 成果物の一覧
         run: ls -lR admin/build/libs || true
@@ -134,7 +138,9 @@ jobs:
 
       - name: ビルド
         working-directory: server
-        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
+        run: |
+          set -o pipefail
+          gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
 
       - name: plugin.yml を確認
         working-directory: server

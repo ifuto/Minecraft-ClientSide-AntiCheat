@@ -209,7 +209,7 @@ def main() -> int:
         commands_text = read(commands_md)
         declared = set(re.findall(r"^  ([a-z][a-z0-9_-]*):", plugin_yml, re.MULTILINE))
         missing_cmds = sorted(cmd for cmd in declared if f"/{cmd}" not in commands_text)
-        notice = root / "client/src/main/resources/privacy-notice.txt"
+        notice = ROOT / "client" / "src" / "main" / "resources" / "privacy-notice.txt"
     notice_ok = notice.exists()
     notice_text = notice.read_text(encoding="utf-8") if notice_ok else ""
     check("プライバシィ告知の文面が同梱されている（起動時の同意に使う）",
@@ -218,17 +218,21 @@ def main() -> int:
           and len(notice_text) > 400,
           "client/src/main/resources/privacy-notice.txt")
 
-    consent = (root / "client/src/main/java/dev/ifuto/mcsa/client/consent/ConsentScreen.java")
+    consent = CLIENT / "java" / "dev/ifuto/mcsa/client/consent/ConsentScreen.java"
+    if not consent.exists():
+        consent = ROOT / "client/src/main/java/dev/ifuto/mcsa/client/consent/ConsentScreen.java"
     consent_text = consent.read_text(encoding="utf-8") if consent.exists() else ""
     check("拒否すると Minecraft を終了させる（同意しないとプレイできない）",
           "scheduleStop" in consent_text and "shouldCloseOnEsc" in consent_text
           and "I Agree" in consent_text and "Decline and Quit" in consent_text,
           "ConsentScreen.java")
 
+    # admin 側は Identifier.of("mcsa", "shot")、サーバー側は "mcsa:shot" を書く
     check("証拠を OP のクライアントへ転送するチャンネルがある",
-          "mcsa:shot" in client_src and "CH_SHOT" in server_src
-          and "mcsa:shot" in admin_src,
-          "client/admin/server のいずれかで欠けています")
+          'Identifier.of("mcsa", "shot")' in all_java_text(ADMIN)
+          and '"mcsa:shot"' in server_text
+          and "ShotPayload" in client_text,
+          "admin の ShotPayload / server の CH_SHOT のいずれかが欠けています")
 
     check("COMMANDS.md に plugin.yml のコマンドが載っている", not missing_cmds,
               f"不足: {missing_cmds}" if missing_cmds else str(sorted(declared)))
