@@ -101,8 +101,11 @@ GitHub App の権限制約でこちらは `.github/workflows/` を push でき�
 ./gradlew -p client build -Pmcsa.obfuscate=false   # 無効化
 ```
 
-- 通常版: `mcsa-client-1.0.0.jar`
-- 難読化版: `mcsa-client-1.0.0-obf.jar` ← **配布するのはこちら**
+- 通常版: `mcsa-client-<バージョン>.jar`
+- 難読化版: `mcsa-client-<バージョン>-obf.jar` ← **配布するのはこちら**
+- **バージョンはビルド毎に上げる**（`trigger.md` の `build:` と同じ番号 → `1.0.25` 等）。
+  jar のファイル名・MOD 一覧のバージョン・`/ac info` の modVersion で
+  「どのビルドか」が必ず分かるようにするため（古い jar の混同防止）。
 - 設定は [`client/proguard.pro`](client/proguard.pro)。エントリーポイントと
   `CustomPayload` 実装は `-keep` してあり、ビルド時に `verifyJar` タスクが
   「jar にエントリーポイントのクラスが入っているか」を検証する。

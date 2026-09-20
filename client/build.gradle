@@ -215,7 +215,7 @@ def verifyStackMaps = { File jarFile ->
                 try {
                     def ifaces = []
                     model.interfaces().each { ifaces << it.stringValue() }
-                    if (ifaces.contains('net.minecraft.class_9139')) {
+                    if (ifaces.contains('net.minecraft.class_9139') || ifaces.contains('net.minecraft.class_8710')) {
                         def methodNames = []
                         model.methods().each { mm ->
                             try {
@@ -223,8 +223,19 @@ def verifyStackMaps = { File jarFile ->
                             } catch (Throwable ignored) {
                             }
                         }
-                        if (!methodNames.contains('decode')) {
-                            bad << "${entry.name}: PacketCodec を実装するが decode メソッドが無い（AbstractMethodError で接続切断になる）"
+                        if (ifaces.contains('net.minecraft.class_9139')) {
+                            // PacketCodec: decode / encode がリネームされていると接続切断
+                            ['decode', 'encode'].each { required ->
+                                if (!methodNames.contains(required)) {
+                                    bad << "${entry.name}: PacketCodec を実装するが ${required} メソッドが無い（AbstractMethodError で接続切断になる）"
+                                }
+                            }
+                        }
+                        if (ifaces.contains('net.minecraft.class_8710')) {
+                            // CustomPayload: getId がリネームされていると登録/受信で落ちる
+                            if (!methodNames.contains('getId')) {
+                                bad << "${entry.name}: CustomPayload を実装するが getId メソッドが無い"
+                            }
                         }
                     }
                 } catch (Throwable ignored) {
