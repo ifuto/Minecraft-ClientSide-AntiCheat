@@ -254,6 +254,14 @@ Minecraft を起動するとプライバシィ告知が出る。**I Agree** で�
 
 ---
 
+### 動かないとき（トラブルシューティング）
+
+| 症状 | 原因と対処 |
+|------|-----------|
+| MOD を入れているのに「参加するには Better NArena の導入が必要です。」でキックされる | **プライバシー系 MOD（OpSec / PrivacyFix 等）がチャンネル隠蔽（Channel Spoofing）をしている**。Paper はクライアントが `minecraft:register` で登録宣言してきたチャンネルにしか plugin message を送らないため、`mcsa:challenge` が届かず「未導入」と同じ扱いになる。該当 MOD の設定で `mcsa` をホワイトリストに入れるか、チャンネル隠蔽をオフにする。**サーバー側からは「隠している」と「入れていない」の区別はつかない（隠蔽の目的どおり）**ので、導入必須サーバーでは OpSec 等は実質使えない |
+| レポートは届くが `UNVERIFIED` ★ が付く | `hmac.key` がクライアントのビルドと不一致。**CI はビルドごとに新しい鍵を生成する**ので、jar を差し替えるたびに同梱の `mcsa-client-<ver>-hmac-key.txt` の値を `config.yml` に反映して `/ac reload` |
+| 起動直後に `VerifyError` / 接続直後に `AbstractMethodError` で落ちる | 古い `-obf.jar`（build ≤22）。必ず最新ビルドを使う（バージョン番号で確認） |
+
 ## 5. リポジトリ
 
 ```
