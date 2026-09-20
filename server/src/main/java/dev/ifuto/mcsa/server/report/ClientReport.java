@@ -34,6 +34,7 @@ public final class ClientReport {
     private final String keyId;
 
     private final List<String> flags = new ArrayList<>();
+    private final List<String> criticalFlags = new ArrayList<>();
     private boolean critical;
 
     public ClientReport(Player player, JsonObject json, boolean hmacValid, String keyId) {
@@ -174,11 +175,27 @@ public final class ClientReport {
         }
         if (isCritical) {
             critical = true;
+            if (!criticalFlags.contains(normalized)) {
+                criticalFlags.add(normalized);
+            }
         }
     }
 
     public List<String> flags() {
         return flags;
+    }
+
+    /**
+     * critical と判定されたフラグだけを返す。
+     *
+     * <p>ポリシー違反でのキック対象を決めるときに使う。
+     * {@code UNVERIFIED}（HMAC 鍵の設定不一致）や {@code CLIENT_TAMPERED}
+     * （ピン留めハッシュの更新忘れ）のような<b>運用側の設定起因</b>フラグは
+     * 「禁止 MOD を入れていた」証拠ではないため、キック判断からは除外したい。
+     * その判別に個別の重要度が必要になる。
+     */
+    public List<String> criticalFlags() {
+        return new ArrayList<>(criticalFlags);
     }
 
     public boolean hasCritical() {

@@ -22,7 +22,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -147,7 +150,12 @@ public final class SessionManager implements Listener {
             String expected = Hmac.keyId(config.hmacKey);
             if (!expected.equalsIgnoreCase(hello.keyId())) {
                 session.lastError("鍵の指紋が一致しません (server=" + expected + ", client=" + hello.keyId() + ")");
-                plugin.alerts().info(player, "クライアントの鍵が違います。配布した jar と config.yml の hmac.key を確認してください");
+                plugin.getLogger().warning(player.getName() + " のクライアントの HMAC 鍵がサーバーと一致しません"
+                        + " (サーバー鍵の指紋=" + expected + " / クライアント鍵の指紋=" + hello.keyId() + ")。"
+                        + "config.yml の hmac.key に、配布中の jar と同じビルドの"
+                        + " mcsa-client-<バージョン>-hmac-key.txt の値を貼って /ac reload してください。"
+                        + "（この状態ではレポートがすべて UNVERIFIED になります）");
+                plugin.alerts().warn(player, "クライアントの鍵が違います。配布した jar と config.yml の hmac.key を確認してください");
             }
         }
         plugin.alerts().info(player, "HELLO 受信 (mod=" + hello.modVersion() + ", jar="
@@ -227,8 +235,61 @@ public final class SessionManager implements Listener {
         plugin.reports().put(player, report);
         plugin.alerts().onReport(player, report);
 
-        if (report.hasCritical() && "KICK".equalsIgnoreCase(config.onBanned)) {
-            player.kick(AlertService.legacy(config.bannedKickMessage));
+        warnConfigMismatches(player, report, config);
+
+        // ポリシー違反でのキック。
+        //
+        // 【重要】UNVERIFIED（HMAC 鍵の設定不一致）と CLIENT_TAMPERED（ピン留め
+        // ハッシュの更新忘れ）は「禁止 MOD を入れていた」証拠ではなく運用側の設定起因
+        // なのでキック対象から除外する（build ≤32 はこれらも critical 扱いで
+        // 「許可されていないMOD/パックが検出されました」のキックになり、
+        // 入れてもいないプレイヤーが締め出されていた）。
+        List<String> kickable = kickableFlags(report);
+        if (!kickable.isEmpty() && "KICK".equalsIgnoreCase(config.onBanned)) {
+            plugin.getLogger().warning(player.getName() + " をポリシー違反でキックしました。フラグ: "
+                    + report.flagSummary());
+            player.kick(AlertService.legacy(config.bannedKickMessage
+                    + "\n§7(" + String.join(", ", kickable) + ")"));
+        } else if (report.hasCritical()) {
+            plugin.getLogger().warning(player.getName() + " に critical フラグ（キック対象外の設定起因フラグを含む）: "
+                    + report.flagSummary());
+        }
+    }
+
+    /** キック判断から除外する設定起因のフラグ（原因はアラートとログで別途案内する） */
+    private static final Set<String> NON_KICK_FLAGS = Set.of(
+            ClientReport.FLAG_UNVERIFIED, ClientReport.FLAG_CLIENT_TAMPERED);
+
+    /** critical フラグのうち、実際にキックしてよいものだけを返す。 */
+    private static List<String> kickableFlags(ClientReport report) {
+        List<String> out = new ArrayList<>();
+        for (String flag : report.criticalFlags()) {
+            if (!NON_KICK_FLAGS.contains(flag)) {
+                out.add(flag);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 設定起因のフラグ（鍵不一致・ピン留めの期限切れ）を、対処法付きでログに案内する。
+     * 「HMAC がうまくいかない」状態をサーバーコンソールだけで切り分けられるようにするため。
+     */
+    private void warnConfigMismatches(Player player, ClientReport report, McsaConfig config) {
+        if (report.flags().contains(ClientReport.FLAG_UNVERIFIED)) {
+            String clientKeyId = session(player) != null && session(player).hello() != null
+                    ? session(player).hello().keyId() : "(unknown)";
+            plugin.getLogger().warning(player.getName() + " のレポートが UNVERIFIED です。"
+                    + "config.yml の hmac.key が配布中のクライアント jar のビルドと一致しません。"
+                    + "クライアント jar と【同じ run の成果物】の mcsa-client-<バージョン>-hmac-key.txt "
+                    + "の値を hmac.key に貼り、/ac reload してください。"
+                    + "（サーバー鍵の指紋=" + Hmac.keyId(config.hmacKey)
+                    + " / クライアント鍵の指紋=" + clientKeyId + "）");
+        }
+        if (report.flags().contains(ClientReport.FLAG_CLIENT_TAMPERED)) {
+            plugin.getLogger().warning(player.getName() + " に CLIENT_TAMPERED が出ました。"
+                    + "config.yml の client.pinned-jar-sha256 が古いビルドのままの可能性があります。"
+                    + "配布中の jar に合わせて更新するか、/ac policy pin-client <プレイヤー> で再固定してください。");
         }
     }
 

@@ -105,6 +105,10 @@ policy:
   banned-shaders: []
   banned-resource-packs: []
   # critical フラグが出たときの処分: KICK / FLAG / LOG
+  # ※ 1.0.33 以降、UNVERIFIED（hmac.key の設定不一致）と CLIENT_TAMPERED
+  #   （pinned-jar-sha256 の更新忘れ）は「運用側の設定起因」として KICK 対象から
+  #   除外される（フラグとアラートは立つ。原因はコンソールに対処法付きで出る）。
+  #   キック時にはプレイヤーにもフラグ名が併記される。
   on-banned: KICK
   banned-kick-message: "§cこのサーバーで許可されていないMOD/パックが検出されました。"
   # MOD id の偽装検知に使うピン留めは pins.yml（/ac policy pin で生成）
