@@ -43,7 +43,11 @@ public final class EvidenceScreen extends Screen {
     private String error;
 
     public EvidenceScreen(Path file, int bytes) {
-        super(Text.literal("Better NArena - Evidence"));
+        // 1.21.11: Screen の client / textRenderer / executor は final。旧 super(Text) だと
+        // null が残り renderBackground 等が NPE になるため、新 ctor を使う
+        // （バニラ・移行済み OSS はすべてこの形）。
+        super(MinecraftClient.getInstance(), MinecraftClient.getInstance().textRenderer,
+                Text.literal("Better NArena - Evidence"));
         this.file = file;
         this.bytes = bytes;
     }

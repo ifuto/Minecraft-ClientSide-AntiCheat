@@ -283,7 +283,7 @@ Minecraft を起動するとプライバシィ告知が出る。**I Agree** で�
 | 症状 | 原因と対処 |
 |------|-----------|
 | MOD を入れているのに「参加するには Better NArena の導入が必要です。」でキックされる | **プライバシー系 MOD（OpSec / PrivacyFix 等）がチャンネル隠蔽（Channel Spoofing）をしている**。Paper はクライアントが `minecraft:register` で登録宣言してきたチャンネルにしか plugin message を送らないため、`mcsa:challenge` が届かず「未導入」と同じ扱いになる。該当 MOD の設定で `mcsa` をホワイトリストに入れるか、チャンネル隠蔽をオフにする。**サーバー側からは「隠している」と「入れていない」の区別はつかない（隠蔽の目的どおり）**ので、導入必須サーバーでは OpSec 等は実質使えない |
-| 同意画面に背景とボタンは出るが、告知文の文字が一切見えない | build ≤30 の既知バグ。1.21.2+ のテキスト描画は色を**完全な ARGB** として解釈するため、アルファ字节のない色（`0xC8C8C8` 等）は**完全透明**になる（ボタンは vanilla が内部でアルファを補完するので見えていた）。**1.0.31 以降**を使う（ついでに折り返しをピクセル幅ベースに変更。GUI スケール 3〜4 でも右端が切れない） |
+| 同意画面に何も表示されない / 背景だけ | build ≤31 の既知バグ（2 つの原因が重なっていた）。① **1.21.11 で `Screen` の `client`/`textRenderer`/`executor` が final 化**され、旧 `Screen(Text)` コンストラクタで生成するとこれらが **null のまま**になる → `renderBackground` が NPE → 描画が毎フレーム中断され「背景だけで何も出ない」になる（build 26〜31 の実態。新 ctor `Screen(MinecraftClient, TextRenderer, Text)` を使えば解決）。② 1.21.2+ のテキスト描画は色を**完全な ARGB** として解釈するため、アルファ字节のない色は**完全透明**になる（`0xFF……` 付き必須）。**1.0.32 以降**を使う（新 ctor + ARGB + ピクセル幅折り返し + 背景/文字/ボタンの個別 try/catch） |
 | レポートは届くが `UNVERIFIED` ★ が付く | `hmac.key` がクライアントのビルドと不一致。jar と `mcsa-client-<ver>-hmac-key.txt` を**同じ run の成果物から**取り、`config.yml` に反映して `/ac reload`。Secrets に `MCSA_HMAC_SEED` を設定すれば全ビルドで同一鍵になり不一致自体が消える（ci/ のワークフロー再コピーが必要）。build ≤29 の Multi Build run は鍵ファイルが成果物に入っていないので、同梱 `build-log.txt` の `[MCSA] HMAC 鍵` 行の値を使う |
 | 起動直後に `VerifyError` / 接続直後に `AbstractMethodError` で落ちる | 古い `-obf.jar`（build ≤22）。必ず最新ビルドを使う（バージョン番号で確認） |
 

@@ -255,8 +255,10 @@ jar の中身を見るので取りこぼさない。逆に「jar を消してメ
 Minecraft 起動
    └─ 「ローディングオーバーレイが消えた」＋「タイトル画面が表示中」の tick で
       1 回だけ同意画面へ差し替え（ESC では閉じられない）
-      ※ ロード中（オーバーレイ表示中）に独自画面を描くとフォント初期化と競合して
-        ゲーム全体の文字が消える（build 26/27 で実際に起きた）。
+      ※ かつて「ロード中に独自画面を出すとフォントが壊れる」と診断していたが、
+        真因は旧 Screen(Text) コンストラクタで client/textRenderer が null のまま
+        だったこと（build 26〜31）。ロード完了後に出すこのタイミングは
+        そのままでも安全で、新 ctor と組み合わせれば問題ない。
         差し替えは client.execute(...) で次 tick へ遅延
         ├─ I Agree        → 文面の SHA-256(先頭12) と時刻を config/mcsa/client.json に記録
         └─ Decline and Quit → 拒否を記録して Minecraft を終了（scheduleStop → stop → exit）
@@ -270,14 +272,16 @@ Minecraft 起動
 - 同意の事実（`consent.accepted` / `hash` / `at`）はレポートに載るので、
   サーバー側でも `CONSENT_MISSING` ★ / `CONSENT_NOTICE_MISMATCH` を立てられる
   （`consent.required` / `consent.notice-hash`）。
-- **画面の実装上の注意（build ≤30 の事故）**: 1.21.2+ のテキスト描画は色を
-  完全な ARGB として解釈する。`drawTextWithShadow` に `0xC8C8C8` のような
-  アルファ字节のない色を渡すと**完全透明**になり、背景とボタンだけが出て
-  告知文が一切見えない（ボタンは vanilla が内部でアルファを補完するため見える）。
-  独自に文字を描くときは必ず `0xFF……` とアルファ付きで指定する。
-  また 1.21.11 の `Screen` はコンストラクタで `TextRenderer` を受け取る仕様に
-  変わっているので、`getTextRenderer()` が取れない場合に備えて
-  `MinecraftClient.getInstance().textRenderer` へのフォールバックを付ける。
+- **画面の実装上の注意（build ≤31 の事故）**: 
+  1.21.11 で `Screen` の `client` / `textRenderer` / `executor` は **final** になり、
+  新コンストラクタ `Screen(MinecraftClient, TextRenderer, Text)` で渡すのが正しい作法
+  （バニラと移行済み OSS はすべてこちら）。旧 `Screen(Text)` で生成すると
+  これらが **null のまま**残り、`renderBackground` が `this.client` 参照で NPE を出して
+  描画が毎フレーム中断される（「背景だけで何も出ない」の正体。build 26〜31 の実態）。
+  さらに 1.21.2+ のテキスト描画は色を完全な ARGB として解釈するため、
+  アルファ字节のない色（`0xC8C8C8` 等）は完全透明になる（`0xFF……` 付き必須）。
+  防御として背景・文字・ボタンをそれぞれ別の try/catch で守り、
+  どれかが失敗しても残りは描くようにしている（失敗は最初の 1 回だけログに出る）。
   折り返しは文字数ではなく**ピクセル幅**（`TextRenderer.getWidth`）で行う
   （GUI スケール 3〜4 だと画面幅が 455px 程度になり、文字数ベースでは右端が切れる）。
 - 「拒否したら MOD を抜くしかない」が仕様。**抜けば導入必須チェックで入室を断られる**

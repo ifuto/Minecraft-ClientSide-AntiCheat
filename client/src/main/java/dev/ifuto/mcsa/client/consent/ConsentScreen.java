@@ -23,14 +23,18 @@ import java.util.List;
  * <p>文面は {@code config/mcsa/privacy-notice.txt}（初回起動時に jar から書き出す）。
  * 長いのでページ分割して表示する（スクロール状態を持たない分だけ壊れにくい）。
  *
- * <p><b>描画の注意（1.21.2+）</b>: テキストの色は完全な ARGB として解釈される。
- * {@code 0xC8C8C8} のようにアルファ字节を持たない色は<strong>完全透明</strong>になり、
- * 「背景とボタンは出るが本文が一切見えない」状態になる（build ≤30 の事故）。
- * 必ず {@code 0xFF……} とアルファ付きで指定すること。
- * ボタン文言が見えていたのは {@code ButtonWidget} が内部でアルファを補完しているため。
- *
- * <p>描画は 1 行も例外を外に漏らさない（描画例外でゲームが落ちないように）。
- * 失敗したら最初の 1 回だけログに出す。
+ * <p><b>実装上の注意（build ≤31 の事故の本質）</b>:
+ * <ul>
+ * <li>1.21.11 から {@code Screen} の {@code client} / {@code textRenderer} / {@code executor} は
+ *     <b>final</b> になり、新コンストラクタ {@code Screen(MinecraftClient, TextRenderer, Text)}
+ *     で渡すのが正しい作法（バニラと移行済み OSS は全部こちら）。
+ *     旧 {@code Screen(Text)} で作るとこれらが <b>null のまま</b> になり、
+ *     {@code renderBackground} が {@code this.client} 参照で NPE → 描画が毎フレーム中断、
+ *     「背景だけで何も出ない」状態になる（build 26〜31 の実態）。
+ * <li>1.21.2+ のテキスト描画は色を完全な ARGB として解釈する。アルファ字节のない色は
+ *     完全透明になる（build ≤30 で文字が見えなかったもう一つの原因）。
+ * <li>背景の描画と文字の描画は別々に try/catch する（背景で例外が出ても文字は出す）。
+ * </ul>
  */
 public final class ConsentScreen extends Screen {
 
@@ -47,8 +51,13 @@ public final class ConsentScreen extends Screen {
     private static boolean renderErrorLogged;
 
     public ConsentScreen() {
-        super(Text.literal("Better NArena - Data Privacy and Incident Prevention Guidelines"));
-        McsaClient.LOGGER.info("[MCSA] ConsentScreen を生成しました");
+        // 1.21.11: Screen は client / textRenderer / executor をコンストラクタで受け取る。
+        // 旧 super(Text) だと null のまま残り、renderBackground が NPE で何も描けない。
+        // この画面はタイトル画面表示後（ロード完了後）にしか作らないので、
+        // getInstance() と textRenderer は必ず初期化済み。
+        super(MinecraftClient.getInstance(), MinecraftClient.getInstance().textRenderer,
+                Text.literal("Better NArena - Data Privacy and Incident Prevention Guidelines"));
+        McsaClient.LOGGER.info("[MCSA] ConsentScreen を生成しました（新 ctor 使用）");
     }
 
     @Override
@@ -97,10 +106,8 @@ public final class ConsentScreen extends Screen {
     }
 
     /**
-     * 1.21.11 の Screen はコンストラクタで TextRenderer を受け取る。
-     * 旧形式の super(Text) で生成した場合に備えて、クライアントのフォントへフォールバックする。
-     * （ここが null だと drawTextWithShadow が NPE → try/catch に握り潰されて
-     * 「文字が一切出ない」事故になるので、絶対に null を返さないようにする）
+     * 画面のフォント。新 ctor を使っていれば null にならないが、
+     * 念のためクライアントのフォントへフォールバックする。
      */
     private TextRenderer fonts() {
         try {
@@ -117,22 +124,36 @@ public final class ConsentScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        // 背景と文字は別々に守る（背景の失敗で文字まで消えたのが build 31 までの事故）
         try {
-            renderBody(context, mouseX, mouseY, delta);
+            this.renderBackground(context, mouseX, mouseY, delta);
         } catch (Throwable t) {
-            if (!renderErrorLogged) {
-                renderErrorLogged = true;
-                McsaClient.LOGGER.error("[MCSA] 同意画面の描画でエラー: {}", t.toString(), t);
-            }
+            logRenderErrorOnce("背景", t);
         }
-        super.render(context, mouseX, mouseY, delta);
+        try {
+            renderText(context);
+        } catch (Throwable t) {
+            logRenderErrorOnce("文字", t);
+        }
+        try {
+            super.render(context, mouseX, mouseY, delta);
+        } catch (Throwable t) {
+            logRenderErrorOnce("ボタン", t);
+        }
     }
 
-    private void renderBody(DrawContext context, int mouseX, int mouseY, float delta) {
-        this.renderBackground(context, mouseX, mouseY, delta);
+    private void logRenderErrorOnce(String part, Throwable t) {
+        if (!renderErrorLogged) {
+            renderErrorLogged = true;
+            McsaClient.LOGGER.error("[MCSA] 同意画面の描画でエラー（{}）: {}", part, t.toString(), t);
+        }
+    }
+
+    private void renderText(DrawContext context) {
         TextRenderer fonts = fonts();
         if (fonts == null) {
-            // 背景とボタンだけでも出す（ここで例外を投げると画面全体が真っ暗になる）
+            // フォントが全く取れない。ここは諦めるしかない（背景とボタンは出る）
+            McsaClient.LOGGER.error("[MCSA] フォントが取得できないため告知文を描画できません");
             return;
         }
         int centerX = this.width / 2;
