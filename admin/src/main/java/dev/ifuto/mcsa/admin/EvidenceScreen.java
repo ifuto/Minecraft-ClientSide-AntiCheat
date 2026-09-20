@@ -94,7 +94,8 @@ public final class EvidenceScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, this.width, this.height, 0xF0101018);
         int centerX = this.width / 2;
-        context.drawCenteredTextWithShadow(this.textRenderer, "Better NArena - Evidence", centerX, 6, 0xFFD060);
+        // 1.21.2+ は色が完全 ARGB。アルファ付きで指定しないと文字が完全透明になる
+        context.drawCenteredTextWithShadow(fonts(), "Better NArena - Evidence", centerX, 6, 0xFFFFD060);
 
         if (textureId != null && imageWidth > 0 && imageHeight > 0) {
             int maxWidth = this.width - 24;
@@ -106,20 +107,37 @@ public final class EvidenceScreen extends Screen {
             int y = 18;
             draw(context, x, y, width, height);
         } else {
-            context.drawCenteredTextWithShadow(this.textRenderer,
-                    error == null ? "表示できません" : error, centerX, this.height / 2 - 24, 0xFF5555);
-            context.drawCenteredTextWithShadow(this.textRenderer,
-                    "Open image / Open folder で開いてください", centerX, this.height / 2 - 10, 0xC0C0C0);
+            context.drawCenteredTextWithShadow(fonts(),
+                    error == null ? "表示できません" : error, centerX, this.height / 2 - 24, 0xFFFF5555);
+            context.drawCenteredTextWithShadow(fonts(),
+                    "Open image / Open folder で開いてください", centerX, this.height / 2 - 10, 0xFFC0C0C0);
         }
 
         int bottom = this.height - 34;
-        context.drawCenteredTextWithShadow(this.textRenderer,
+        context.drawCenteredTextWithShadow(fonts(),
                 file.getFileName() + "  (" + bytes + " bytes"
                         + (imageWidth > 0 ? ", " + imageWidth + "x" + imageHeight : "") + ")",
-                centerX, bottom - 10, 0xC0C0C0);
-        context.drawCenteredTextWithShadow(this.textRenderer, file.toAbsolutePath().toString(),
-                centerX, bottom, 0x707070);
+                centerX, bottom - 10, 0xFFC0C0C0);
+        context.drawCenteredTextWithShadow(fonts(), file.toAbsolutePath().toString(),
+                centerX, bottom, 0xFF707070);
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    /**
+     * 1.21.11 の Screen はコンストラクタで TextRenderer を受け取る。
+     * 旧形式の super(Text) で生成した場合に備えて、クライアントのフォントへフォールバックする。
+     */
+    private net.minecraft.client.font.TextRenderer fonts() {
+        try {
+            net.minecraft.client.font.TextRenderer f = this.textRenderer;
+            if (f != null) {
+                return f;
+            }
+        } catch (Throwable ignored) {
+            // フォールバックへ
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        return client != null ? client.textRenderer : null;
     }
 
     /**

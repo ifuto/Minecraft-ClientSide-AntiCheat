@@ -270,6 +270,16 @@ Minecraft 起動
 - 同意の事実（`consent.accepted` / `hash` / `at`）はレポートに載るので、
   サーバー側でも `CONSENT_MISSING` ★ / `CONSENT_NOTICE_MISMATCH` を立てられる
   （`consent.required` / `consent.notice-hash`）。
+- **画面の実装上の注意（build ≤30 の事故）**: 1.21.2+ のテキスト描画は色を
+  完全な ARGB として解釈する。`drawTextWithShadow` に `0xC8C8C8` のような
+  アルファ字节のない色を渡すと**完全透明**になり、背景とボタンだけが出て
+  告知文が一切見えない（ボタンは vanilla が内部でアルファを補完するため見える）。
+  独自に文字を描くときは必ず `0xFF……` とアルファ付きで指定する。
+  また 1.21.11 の `Screen` はコンストラクタで `TextRenderer` を受け取る仕様に
+  変わっているので、`getTextRenderer()` が取れない場合に備えて
+  `MinecraftClient.getInstance().textRenderer` へのフォールバックを付ける。
+  折り返しは文字数ではなく**ピクセル幅**（`TextRenderer.getWidth`）で行う
+  （GUI スケール 3〜4 だと画面幅が 455px 程度になり、文字数ベースでは右端が切れる）。
 - 「拒否したら MOD を抜くしかない」が仕様。**抜けば導入必須チェックで入室を断られる**
   （`enforce.mode`）ので、逃げ道にはならない。
 

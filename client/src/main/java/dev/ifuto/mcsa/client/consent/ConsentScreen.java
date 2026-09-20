@@ -23,6 +23,12 @@ import java.util.List;
  * <p>文面は {@code config/mcsa/privacy-notice.txt}（初回起動時に jar から書き出す）。
  * 長いのでページ分割して表示する（スクロール状態を持たない分だけ壊れにくい）。
  *
+ * <p><b>描画の注意（1.21.2+）</b>: テキストの色は完全な ARGB として解釈される。
+ * {@code 0xC8C8C8} のようにアルファ字节を持たない色は<strong>完全透明</strong>になり、
+ * 「背景とボタンは出るが本文が一切見えない」状態になる（build ≤30 の事故）。
+ * 必ず {@code 0xFF……} とアルファ付きで指定すること。
+ * ボタン文言が見えていたのは {@code ButtonWidget} が内部でアルファを補完しているため。
+ *
  * <p>描画は 1 行も例外を外に漏らさない（描画例外でゲームが落ちないように）。
  * 失敗したら最初の 1 回だけログに出す。
  */
@@ -30,9 +36,10 @@ public final class ConsentScreen extends Screen {
 
     private static final int MARGIN = 24;
     private static final int LINE_HEIGHT = 11;
-    private static final int WRAP_WIDTH = 110;
+    /** textRenderer が取れないときのフォールバック（文字数ベース）の折り返し幅 */
+    private static final int FALLBACK_WRAP_CHARS = 60;
 
-    private final List<String> lines;
+    private final List<String> lines = new ArrayList<>();
     private int page;
     private int pageCount;
 
@@ -41,8 +48,7 @@ public final class ConsentScreen extends Screen {
 
     public ConsentScreen() {
         super(Text.literal("Better NArena - Data Privacy and Incident Prevention Guidelines"));
-        this.lines = wrap(ConsentManager.text(), WRAP_WIDTH);
-        McsaClient.LOGGER.info("[MCSA] ConsentScreen を生成しました（行数={}）", lines.size());
+        McsaClient.LOGGER.info("[MCSA] ConsentScreen を生成しました");
     }
 
     @Override
@@ -57,11 +63,29 @@ public final class ConsentScreen extends Screen {
                 .dimensions(centerX + 85, y, 65, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Next >"), button -> turnPage(1))
                 .dimensions(centerX + 153, y, 65, 20).build());
+        rewrap();
+    }
+
+    /**
+     * 画面幅が分かってから実際のピクセル幅で折り返し直す。
+     * （文字数ベースだと GUI スケール 3〜4 で右端が切れる。
+     * リサイズで init が呼び直されるので、そのたびにやり直すのが正しい）
+     */
+    private void rewrap() {
+        TextRenderer fonts = fonts();
+        if (fonts != null) {
+            int maxWidth = Math.max(80, this.width - MARGIN * 2);
+            lines.clear();
+            lines.addAll(wrapPixels(ConsentManager.text(), fonts, maxWidth));
+        } else if (lines.isEmpty()) {
+            // textRenderer が取れない非常時のみ。多少切れても文面は出る。
+            lines.addAll(wrap(ConsentManager.text(), FALLBACK_WRAP_CHARS));
+        }
         int visible = visibleLines();
         pageCount = Math.max(1, (lines.size() + visible - 1) / visible);
         page = Math.min(page, pageCount - 1);
-        McsaClient.LOGGER.info("[MCSA] ConsentScreen init（w={}, h={}, 行数={}, ページ数={}）",
-                this.width, this.height, lines.size(), pageCount);
+        McsaClient.LOGGER.info("[MCSA] ConsentScreen init（w={}, h={}, 行数={}, ページ数={}, fonts={}）",
+                this.width, this.height, lines.size(), pageCount, fonts != null ? "OK" : "null");
     }
 
     private int visibleLines() {
@@ -70,6 +94,25 @@ public final class ConsentScreen extends Screen {
 
     private void turnPage(int delta) {
         page = Math.max(0, Math.min(pageCount - 1, page + delta));
+    }
+
+    /**
+     * 1.21.11 の Screen はコンストラクタで TextRenderer を受け取る。
+     * 旧形式の super(Text) で生成した場合に備えて、クライアントのフォントへフォールバックする。
+     * （ここが null だと drawTextWithShadow が NPE → try/catch に握り潰されて
+     * 「文字が一切出ない」事故になるので、絶対に null を返さないようにする）
+     */
+    private TextRenderer fonts() {
+        try {
+            TextRenderer f = this.getTextRenderer();
+            if (f != null) {
+                return f;
+            }
+        } catch (Throwable ignored) {
+            // フォールバックへ
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        return client != null ? client.textRenderer : null;
     }
 
     @Override
@@ -87,13 +130,17 @@ public final class ConsentScreen extends Screen {
 
     private void renderBody(DrawContext context, int mouseX, int mouseY, float delta) {
         this.renderBackground(context, mouseX, mouseY, delta);
-        TextRenderer fonts = this.getTextRenderer();
+        TextRenderer fonts = fonts();
+        if (fonts == null) {
+            // 背景とボタンだけでも出す（ここで例外を投げると画面全体が真っ暗になる）
+            return;
+        }
         int centerX = this.width / 2;
         context.drawCenteredTextWithShadow(fonts,
-                "Data Privacy and Incident Prevention Guidelines", centerX, 8, 0xFFD060);
+                "Data Privacy and Incident Prevention Guidelines", centerX, 8, 0xFFFFD060);
         context.drawCenteredTextWithShadow(fonts,
                 "You must agree before you can play. Declining closes Minecraft.",
-                centerX, 20, 0x909090);
+                centerX, 20, 0xFF909090);
 
         int visible = visibleLines();
         int start = page * visible;
@@ -101,14 +148,14 @@ public final class ConsentScreen extends Screen {
         for (int i = start; i < lines.size() && i < start + visible; i++) {
             String line = lines.get(i);
             if (!line.isEmpty()) {
-                context.drawTextWithShadow(fonts, line, MARGIN, y, 0xC8C8C8);
+                context.drawTextWithShadow(fonts, line, MARGIN, y, 0xFFC8C8C8);
             }
             y += LINE_HEIGHT;
         }
         if (pageCount > 1) {
             context.drawCenteredTextWithShadow(fonts,
                     "(page " + (page + 1) + " / " + pageCount + ")",
-                    centerX, this.height - 42, 0x707070);
+                    centerX, this.height - 42, 0xFF707070);
         }
     }
 
@@ -170,7 +217,50 @@ public final class ConsentScreen extends Screen {
         System.exit(0);
     }
 
-    /** 素朴なワードラップ（MC の API に依存しない） */
+    /**
+     * ピクセル幅でワードラップする（GUI スケールが大きくても右端で切れない）。
+     * 1 単語だけで行幅を超えるときは文字単位で折る。
+     */
+    static List<String> wrapPixels(String text, TextRenderer fonts, int maxWidth) {
+        List<String> out = new ArrayList<>();
+        for (String paragraph : text.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1)) {
+            if (paragraph.isBlank()) {
+                out.add("");
+                continue;
+            }
+            if (fonts.getWidth(paragraph) <= maxWidth) {
+                out.add(paragraph);
+                continue;
+            }
+            StringBuilder current = new StringBuilder();
+            for (String word : paragraph.split(" ")) {
+                String candidate = current.length() == 0 ? word : current + " " + word;
+                if (current.length() == 0 || fonts.getWidth(candidate) <= maxWidth) {
+                    current.setLength(0);
+                    current.append(candidate);
+                } else {
+                    out.add(current.toString());
+                    current.setLength(0);
+                    current.append(word);
+                }
+                // 1 単語が maxWidth を超えるなら文字単位で折る
+                while (fonts.getWidth(current.toString()) > maxWidth && current.length() > 1) {
+                    int cut = current.length() - 1;
+                    while (cut > 1 && fonts.getWidth(current.substring(0, cut)) > maxWidth) {
+                        cut--;
+                    }
+                    out.add(current.substring(0, cut));
+                    current.delete(0, cut);
+                }
+            }
+            if (current.length() > 0) {
+                out.add(current.toString());
+            }
+        }
+        return out;
+    }
+
+    /** 素朴なワードラップ（textRenderer が使えないときのフォールバック） */
     static List<String> wrap(String text, int width) {
         List<String> out = new ArrayList<>();
         for (String paragraph : text.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1)) {
