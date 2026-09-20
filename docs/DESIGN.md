@@ -245,9 +245,10 @@ jar の中身を見るので取りこぼさない。逆に「jar を消してメ
 
 ```
 Minecraft 起動
-   └─ 初期ロード完了（CLIENT_STARTED）後、同意が済むまで毎 tick確認して
-      ConsentScreen を表示（ESC では閉じられない）。
-      ※ 最初の tick だとロード中で、後からタイトル画面に上書きされて消える
+   └─ 画面が初期化された直後（ScreenEvents.AFTER_INIT）に同意画面へ差し替え
+      （ESC では閉じられない）。差し替えは client.execute(...) で次 tick へ遅延。
+      ※ 最初の tick で出すとロード中でタイトル画面に上書きされ、
+        毎 tick setScreen で差し戻すとオーバーレイ中に暴走して画面が壊れる
         ├─ I Agree        → 文面の SHA-256(先頭12) と時刻を config/mcsa/client.json に記録
         └─ Decline and Quit → 拒否を記録して Minecraft を終了（scheduleStop → stop → exit）
 ```

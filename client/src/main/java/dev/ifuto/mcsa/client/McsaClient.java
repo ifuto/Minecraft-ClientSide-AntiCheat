@@ -11,8 +11,7 @@ import dev.ifuto.mcsa.client.net.Payloads;
 import dev.ifuto.mcsa.client.net.TaskPayload;
 import dev.ifuto.mcsa.client.net.Tasks;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -33,8 +32,6 @@ public final class McsaClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("MCSA");
 
     private static McsaClient instance;
-    /** 初期ロードが終わったか（終わる前に画面を出すとタイトル画面に上書きされて消える） */
-    private static volatile boolean clientStarted;
 
     public static McsaClient get() {
         return instance;
@@ -62,16 +59,21 @@ public final class McsaClient implements ClientModInitializer {
                 (payload, context) -> Tasks.onTask(payload));
 
         // 起動後にプライバシィ告知を出す（同意するまでプレイできない）。
-        // 【重要】最初の tick で出すと、まだリソースのロード中で、後から表示される
-        // タイトル画面に上書きされて消えてしまう（実機で一度も出なかった事故の原因）。
-        // なので CLIENT_STARTED（初期ロード完了）の後、同意が済むまで毎 tick 確認する。
-        ClientLifecycleEvents.CLIENT_STARTED.register(client -> clientStarted = true);
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (!clientStarted || ConsentManager.accepted()
-                    || client.currentScreen instanceof ConsentScreen) {
+        //
+        // 実装は Fabric の標準 API（ScreenEvents.AFTER_INIT）+ 遅延:
+        //   - 最初の tick やロード中に setScreen すると、後から表示されるタイトル画面に
+        //     上書きされて消える（build ≤25 で同意画面が一度も出なかった原因）
+        //   - かといって「毎 tick setScreen で差し戻す」と、ロードオーバーレイ中に
+        //     currentScreen==null が続いて毎 tick 画面を作り直す暴走になり、
+        //     ボタンが消えるなどの壊れ方をする（build 26 で実際に起きた）
+        //   - AFTER_INIT は「画面が init() を終えた直後」に一度だけ呼ばれるので、
+        //     これで受け取って、client.execute(...) で次の tick へ遅延してから
+        //     差し替える（init の途中で setScreen しないための定石）
+        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+            if (ConsentManager.accepted() || screen instanceof ConsentScreen) {
                 return;
             }
-            client.setScreen(new ConsentScreen());
+            client.execute(() -> client.setScreen(new ConsentScreen()));
         });
 
         // 起動時に一度だけ自己整合性を計算しておく（重いので非同期）

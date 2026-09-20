@@ -5,7 +5,7 @@
 #       成果物のバイトコードは Java 21 向け（client/build.gradle の options.release=21）なので、
 #       プレイヤー側は Java 21 のままで動く。
 #
-# 今の設定: クライアント MOD（client/）をビルド（同意画面の表示タイミング修正、1.0.26）。
+# 今の設定: クライアント MOD（client/）をビルド（同意画面を ScreenEvents 標準パターンに、1.0.27）。
 #           admin は build: 24、server は build: 24（Paper 起動確認込み）で検証済み。
 #           3 つを一度に見たい場合は ci/build-check.yml を .github/workflows/ に置く。
 
@@ -18,4 +18,4 @@ server_test: false
 # ★ 同時に client/gradle.properties の mcsa_version を「1.0.<同じ番号>」に上げること。
 #   （成果物のファイル名と MOD 一覧のバージョンがビルド毎に変わるので、
 #    古い jar の混同が起きなくなる）
-build: 26
+build: 27
