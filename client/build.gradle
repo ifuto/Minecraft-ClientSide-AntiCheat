@@ -209,6 +209,27 @@ def verifyStackMaps = { File jarFile ->
             try {
                 bytes = zip.getInputStream(entry).readAllBytes()
                 model = parse.invoke(classFileApi, [bytes] as Object[])
+                // PacketCodec(class_9139) を実装するクラスは decode がリネームされていないこと。
+                // リネームされると Fabric から interface 経由で呼べず
+                // AbstractMethodError で接続が切れる（build ≤22 の再発防止）。
+                try {
+                    def ifaces = []
+                    model.interfaces().each { ifaces << it.stringValue() }
+                    if (ifaces.contains('net.minecraft.class_9139')) {
+                        def methodNames = []
+                        model.methods().each { mm ->
+                            try {
+                                methodNames << mm.methodName().stringValue()
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                        if (!methodNames.contains('decode')) {
+                            bad << "${entry.name}: PacketCodec を実装するが decode メソッドが無い（AbstractMethodError で接続切断になる）"
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // interfaces() が取れない形式ならスキップ
+                }
             } catch (Throwable t) {
                 String head = '(empty)'
                 if (bytes != null && bytes.length > 0) {
@@ -294,10 +315,22 @@ tasks.register('obfuscateJar', JavaExec) {
     mainClass = 'proguard.ProGuard'
 
     doFirst {
-        def libs = javaLibraryJars()
-        sourceSets.main.compileClasspath.files.each {
-            if (it.exists()) libs << it.absolutePath
+        // 【重要】ライブラリは remapJar のクラスパス（intermediary 名の Minecraft / Fabric）を
+        // 使う。難読化対象の jar は remapJar 後（intermediary 名）なので、コンパイル用の
+        // クラスパス（named 名）を渡すと名前の世界が食い違い、ProGuard には
+        // net.minecraft.class_9139（PacketCodec）などが「存在しないクラス」に見える。
+        // すると Override 認識が働かず PacketCodec.decode がリネームされ、
+        // 接続直後に AbstractMethodError で切断される（build ≤22 の -obf.jar で実際に発生）。
+        def libs = []
+        tasks.named('remapJar').get().classpath.each {
+            if (it.exists()) {
+                libs << it.absolutePath
+            }
         }
+        if (libs.isEmpty()) {
+            throw new GradleException('remapJar のクラスパスが取れません（ProGuard が Override を認識できません）')
+        }
+        logger.lifecycle('[MCSA] ProGuard: ライブラリ {} 件（remapJar クラスパス = intermediary 名）', libs.size())
         def a = ['-injars', inJar.get().asFile.absolutePath,
                  '-outjars', outJar.get().asFile.absolutePath]
         libs.each { a << '-libraryjars' << it }

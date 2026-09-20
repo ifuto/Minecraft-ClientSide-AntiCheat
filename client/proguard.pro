@@ -26,6 +26,10 @@
 -keep class * implements net.fabricmc.api.ModInitializer { *; }
 -keep class * implements net.fabricmc.api.DedicatedServerModInitializer { *; }
 
+# --- Screen のサブクラス（同意画面・証拠ビューア）。Override がリネームされると
+#     開いた瞬間に AbstractMethodError になる（class_437 = Screen）---
+-keep class * extends net.minecraft.class_437 { *; }
+
 # --- CustomPayload 実装（intermediary 名 net.minecraft.class_8710）---
 # Id/Type/Codec がジェネリクス経由で参照されるため丸ごと残す
 -keep class * implements net.minecraft.class_8710 { *; }

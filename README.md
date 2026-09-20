@@ -109,7 +109,8 @@ GitHub App の権限制約でこちらは `.github/workflows/` を push でき�
 - さらに `verifyStackMaps` が「分岐を持つ全メソッドに StackMapTable があるか」を
   検証する（かつて `-dontpreverify` 付きでビルドした -obf.jar が起動直後に
   `VerifyError: Expecting a stackmap frame` で落ちた事故の再発防止）。
-  **build 16 以前の `-obf.jar` は起動できないので配布・使用しないこと。**
+  **build 22 以前の `-obf.jar` は使わないこと**（build ≤16 は起動時 VerifyError、
+  build ≤22 は接続直後に `AbstractMethodError`（PacketCodec.decode がリネームされる）で切断）。
 
 ### HMAC 鍵
 

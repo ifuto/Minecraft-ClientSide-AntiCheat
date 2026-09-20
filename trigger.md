@@ -5,8 +5,8 @@
 #       成果物のバイトコードは Java 21 向け（client/build.gradle の options.release=21）なので、
 #       プレイヤー側は Java 21 のままで動く。
 #
-# 今の設定: クライアント MOD（client/）をビルド（allowCapture 廃止を検証）。
-#           admin は build: 22、server は build: 22（Paper 起動確認込み）で検証済み。
+# 今の設定: クライアント MOD（client/）をビルド（ProGuard ライブラリ修正を検証）。
+#           admin は build: 23、server は build: 23（Paper 起動確認込み）で検証済み。
 #           3 つを一度に見たい場合は ci/build-check.yml を .github/workflows/ に置く。
 
 workdir: client
@@ -15,4 +15,4 @@ java: 25
 server_test: false
 
 # ビルド番号（この行を変えると push トリガーが走る）
-build: 22
+build: 23
