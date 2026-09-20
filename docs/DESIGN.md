@@ -157,6 +157,14 @@ Bukkit 側の `Player#getListeningPluginChannels()`（＝クライアントが�
 
 という割り切りにしている。
 
+鍵のビルド時の決め方（`client/build.gradle`）:
+
+- GitHub Secrets の `MCSA_HMAC_SEED` が設定されていれば決定論的に導出し、
+  全ワークフロー・全ランで同一（ラン毎の鍵ずれによる UNVERIFIED 事故の防止）。
+- 未設定ならラン毎にランダム。この場合 jar と `mcsa-client-<ver>-hmac-key.txt` は
+  同じ run の成果物から取ること（古い run の鍵は `build-log.txt` の
+  `[MCSA] HMAC 鍵` 行から救済できる）。
+
 ---
 
 ### 5.3 注入（Mixin / agent）をどう捕まえるか

@@ -48,13 +48,25 @@ processResources {
 
 // ---------------------------------------------------------------------------
 // HMAC 鍵素材の生成
-//   レポートの改ざん検知に使う 32 バイト鍵をビルドごとに生成し、
+//   レポートの改ざん検知に使う 32 バイト鍵を生成し、
 //   XOR マスクを掛けた int 配列として Java ソースを生成する。
 //   平文の文字列定数は jar に残らない（strings で拾えない）。
+//
+//   鍵の決め方（この順で優先）:
+//     1. MCSA_HMAC_SEED 環境変数（GitHub Secrets から渡す。推奨）があれば
+//        HMAC-SHA256(seed, "mcsa-hmac-key-v1") から決定論的に導出。
+//        → どのワークフロー / どのランでビルドしても同じ鍵になるので、
+//          「Multi Build の jar」と「Build Check の鍵ファイル」を
+//          取り違えて UNVERIFIED になる事故が起きない。
+//     2. client/hmac-key.txt（64 桁 16 進）があれば再利用（Git 管理外）。
+//     3. どちらも無ければ毎回ランダム生成。
+//        → CI は毎回クリーンチェックアウトなのでラン毎に別の鍵になる。
+//          jar と鍵ファイルは必ず同じ run の成果物から取ること。
 //
 //   生成された鍵は
 //     - client/hmac-key.txt          （次回ビルドで再利用。Git 管理外）
 //     - build/libs/*-hmac-key.txt    （成果物と一緒に配布。サーバ設定に貼る）
+//     - ビルドログの「[MCSA] HMAC 鍵」行（成果物の build-log.txt にも入る）
 //   に出力される。サーバ側 config.yml の hmac.key に同じ値を設定すること。
 // ---------------------------------------------------------------------------
 def hmacKeyFile = layout.projectDirectory.file('hmac-key.txt')
@@ -80,14 +92,22 @@ tasks.register('generateKeyMaterial') {
         def rnd = new java.security.SecureRandom()
         byte[] key
         def f = hmacKeyFile.asFile
-        if (f.exists() && f.text.trim().length() == 64) {
+        def seed = System.getenv('MCSA_HMAC_SEED')
+        if (seed != null && !seed.trim().isEmpty()) {
+            // モード 1: 決定論的導出（推奨）。Secrets の値自体はログ・成果物に出ない。
+            // 鍵を回したいときは Secret の値を変える（または下のラベルを変える）。
+            def mac = javax.crypto.Mac.getInstance('HmacSHA256')
+            mac.init(new javax.crypto.spec.SecretKeySpec(seed.getBytes('UTF-8'), 'HmacSHA256'))
+            key = mac.doFinal('mcsa-hmac-key-v1'.getBytes('UTF-8'))
+            logger.lifecycle('[MCSA] HMAC 鍵を MCSA_HMAC_SEED から決定論的に導出しました（全ワークフローで同一）')
+        } else if (f.exists() && f.text.trim().length() == 64) {
             key = fromHex(f.text.trim())
             logger.lifecycle('[MCSA] 既存の HMAC 鍵を再利用します: {}', f)
         } else {
             key = new byte[32]
             rnd.nextBytes(key)
             f.text = toHex(key) + '\n'
-            logger.lifecycle('[MCSA] 新しい HMAC 鍵を生成しました: {}', f)
+            logger.lifecycle('[MCSA] 新しい HMAC 鍵を生成しました（このラン限定。jar と鍵ファイルは同じ run の成果物から取得すること）: {}', f)
         }
 
         byte[] mask = new byte[32]

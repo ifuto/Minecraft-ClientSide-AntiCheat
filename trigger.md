@@ -5,12 +5,14 @@
 #       成果物のバイトコードは Java 21 向け（client/build.gradle の options.release=21）なので、
 #       プレイヤー側は Java 21 のままで動く。
 #
-# 今の設定: クライアント MOD（client/）をビルド（同意画面の表示タイミング最終修正、1.0.29）。
+# 今の設定: クライアント MOD（client/）をビルド（Multi Build の成果物に HMAC 鍵ファイルを
+#           同梱するように修正 + MCSA_HMAC_SEED 対応、1.0.30）。
+#           同意画面のコードは 1.0.29 と同一（表示タイミング修正の確認は 1.0.30 で OK）。
 #           admin は build: 24、server は build: 24（Paper 起動確認込み）で検証済み。
 #           3 つを一度に見たい場合は ci/build-check.yml を .github/workflows/ に置く。
 
 workdir: client
-artifact_path: client/build/libs/*.jar
+artifact_path: client/build/libs/*
 java: 25
 server_test: false
 

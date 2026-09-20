@@ -117,8 +117,28 @@ GitHub App の権限制約でこちらは `.github/workflows/` を push でき�
 
 ### HMAC 鍵
 
-ビルドのたびに 32 バイトの鍵を生成（`client/hmac-key.txt` があれば再利用）し、
-XOR マスクした int 配列としてソースを生成する（平文は jar に残らない）。
+レポートの改ざん検知に使う 32 バイト鍵を生成し、XOR マスクした int 配列として
+ソースを生成する（平文は jar に残らない）。
+
+鍵の決め方（優先順位）:
+
+1. **`MCSA_HMAC_SEED`（推奨）** — GitHub リポジトリの Secrets に設定すると、
+   `HMAC-SHA256(seed, "mcsa-hmac-key-v1")` から決定論的に導出される。
+   どのワークフロー・どのランでビルドしても**同じ鍵**になるため、
+   「Multi Build の jar × Build Check の鍵ファイル」のような取り違えで
+   `UNVERIFIED` になる事故が起きない。設定方法:
+   Settings → Secrets and variables → Actions → New repository secret
+   （名前 `MCSA_HMAC_SEED`、値は長いランダム文字列）。
+   **Secrets を参照するには ci/ のワークフローを .github/workflows/ に再コピーする
+   必要がある**（鍵を受け渡す step を追加した版が `ci/build-mod.yml` /
+   `ci/build-check.yml` にある）。鍵を回したいときは Secret の値を変えてビルドし直す。
+2. `client/hmac-key.txt`（64 桁 16 進）があれば再利用（Git 管理外）。
+3. どちらも無ければランダム生成。CI は毎回クリーンチェックアウトなので
+   **ラン毎に別の鍵**になる。この場合、jar と鍵ファイルは
+   **必ず同じ run の成果物から**取ること（build 30 以降、Multi Build の成果物にも
+   `mcsa-client-<ver>-hmac-key.txt` が入る。
+   build ≤29 の Multi Build run では成果物に鍵ファイルが入っていないので、
+   同梱の `build-log.txt` の `[MCSA] HMAC 鍵` 行から値を救済できる）。
 
 鍵はビルドログと `client/build/libs/mcsa-client-<ver>-hmac-key.txt` に出るので、
 その値をサーバーの `plugins/MCSA/config.yml` → `hmac.key` に貼る。
@@ -131,6 +151,10 @@ hmac:
 
 鍵が未設定だとレポートの改ざんを検知できず、全レポートが `UNVERIFIED` 扱いになる
 （起動時に WARNING が出る）。
+
+> **注意（リポジトリ可視性）**: リポジトリが public の間は Actions のログ・成果物は
+> 誰でも閲覧・ダウンロードできる（＝HMAC 鍵もそこに載る）。クライアントの配布ページを
+> このリポジトリとは別にしているなら、リポジトリ自体は private にするのが望ましい。
 
 ---
 

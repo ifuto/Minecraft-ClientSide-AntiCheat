@@ -1,5 +1,10 @@
 name: Build Check
 
+# 2026-09-20 更新: client のビルドに GitHub Secrets の MCSA_HMAC_SEED を渡すようにした。
+# （Secret を設定すると Multi Build と Build Check で同じ HMAC 鍵が決定論的に導出され、
+#   違うワークフローの jar と鍵ファイルを取り違えて UNVERIFIED になる事故が消える）
+# .github/workflows/build-check-2.yml へコピーして使う。
+
 # client/（Fabric MOD）・admin/（OP 用 MOD）・server/（Paper プラグイン）を
 # すべて実際にコンパイルする CI。
 #
@@ -60,6 +65,9 @@ jobs:
 
       - name: ビルド（難読化込み）
         working-directory: client
+        env:
+          # GitHub Secrets に MCSA_HMAC_SEED を設定すると全ワークフローで同一鍵。
+          MCSA_HMAC_SEED: ${{ secrets.MCSA_HMAC_SEED }}
         run: |
           set -o pipefail
           gradle build --no-daemon --stacktrace 2>&1 | tee build-log.txt
