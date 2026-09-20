@@ -11,6 +11,7 @@ import dev.ifuto.mcsa.client.net.Payloads;
 import dev.ifuto.mcsa.client.net.TaskPayload;
 import dev.ifuto.mcsa.client.net.Tasks;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -33,6 +34,8 @@ public final class McsaClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("MCSA");
 
     private static McsaClient instance;
+    /** 同意画面を一度出したら true（二度出さない） */
+    private static volatile boolean consentShown;
 
     public static McsaClient get() {
         return instance;
@@ -93,19 +96,30 @@ public final class McsaClient implements ClientModInitializer {
 
         // 起動後にプライバシィ告知を出す（同意するまでプレイできない）。
         //
-        // 実装は Fabric の標準 API（ScreenEvents.AFTER_INIT）+ 遅延:
-        //   - 最初の tick やロード中に setScreen すると、後から表示されるタイトル画面に
-        //     上書きされて消える（build ≤25 で同意画面が一度も出なかった原因）
-        //   - かといって「毎 tick setScreen で差し戻す」と、ロードオーバーレイ中に
-        //     currentScreen==null が続いて毎 tick 画面を作り直す暴走になり、
-        //     ボタンが消えるなどの壊れ方をする（build 26 で実際に起きた）
-        //   - AFTER_INIT は「画面が init() を終えた直後」に一度だけ呼ばれるので、
-        //     これで受け取って、client.execute(...) で次の tick へ遅延してから
-        //     差し替える（init の途中で setScreen しないための定石）
-        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
-            if (ConsentManager.accepted() || screen instanceof ConsentScreen) {
+        // 【タイミングが全て】過去 3 回の事故:
+        //   build ≤25: 最初の tick で setScreen → ロード中で、後から出るタイトル画面に
+        //              上書きされて同意画面が一度も表示されない
+        //   build 26:  CLIENT_STARTED 後も毎 tick setScreen → ロードオーバーレイが
+        //              出ている間に自画面を毎フレーム描画 → フォント破損で
+        //              「全ボタンの文字が消える」
+        //   build 27:  AFTER_INIT が TitleScreen の init（=ロード中）に発火 → 同じく
+        //              ロード中の描画でフォント破損
+        //
+        // 条件: ①ローディングオーバーレイが完全に消えている ②今表示されているのは
+        // タイトル画面 ③まだ一度も出していない —— を全て満たす tick で、
+        // 1 回だけ（client.execute で遅延して）差し替える。
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (consentShown || ConsentManager.accepted()) {
                 return;
             }
+            if (overlayActive(client)) {
+                return;
+            }
+            if (!(client.currentScreen instanceof TitleScreen)) {
+                return;
+            }
+            consentShown = true;
+            LOGGER.info("[MCSA] ロード完了・タイトル画面表示を確認。同意画面を出します");
             client.execute(() -> client.setScreen(new ConsentScreen()));
         });
 
