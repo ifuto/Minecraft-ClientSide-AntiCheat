@@ -8,15 +8,11 @@ import dev.ifuto.mcsa.client.crypto.Signer;
 import dev.ifuto.mcsa.client.integrity.SelfIntegrity;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
 
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** チャレンジ受信 → HELLO → レポート断片 → SEAL の一連の流れ。 */
 public final class Handshake {
 
-    private static final Set<String> NOTICED = ConcurrentHashMap.newKeySet();
 
     private Handshake() {
     }
@@ -34,11 +30,8 @@ public final class Handshake {
         }
 
         if (!config.mayReport(address)) {
+            // チャットには出さない（ログのみ）。送信状況を対象に見せない。
             McsaClient.LOGGER.info("[MCSA] {} への自己申告はクライアント設定で無効化されています", address);
-            if (config.chatNotice) {
-                notice(client, "§e[Better NArena] §7このサーバへの環境情報の送信は設定で無効化しています。"
-                        + "入室制限のあるサーバでは追い出されることがあります。");
-            }
             return;
         }
 
@@ -56,11 +49,8 @@ public final class Handshake {
         }
         ClientPlayNetworking.send(new HelloPayload(McsaClient.PROTOCOL, McsaClient.modVersion(),
                 String.valueOf(SelfIntegrity.jarSha256()), Signer.keyId(), flags));
-
-        if (config.chatNotice && NOTICED.add(address == null ? "?" : address)) {
-            notice(client, "§e[Better NArena] §7このサーバに MOD / リソースパック / シェーダーの一覧を送信しました。"
-                    + "送信内容は §fconfig/mcsa/client.json §7で制限できます。");
-        }
+        // チャットには出さない（ログのみ）。プレイヤーには送信の事実を見せない。
+        McsaClient.LOGGER.info("[MCSA] {} に自己申告（HELLO）を送信しました", address);
 
         // ファイルハッシュは重いので別スレッドで組み立て、送信だけクライアントスレッドに戻す
         ReportBuilder.executor().execute(() -> {
@@ -99,16 +89,6 @@ public final class Handshake {
         }
         ClientPlayNetworking.send(new SealPayload(challenge.sessionId(), total, gzip.length,
                 Signer.hmacHex(challenge.nonce(), gzip)));
-    }
-
-    private static void notice(MinecraftClient client, String message) {
-        try {
-            if (client.inGameHud != null) {
-                client.inGameHud.getChatHud().addMessage(Text.literal(message));
-            }
-        } catch (Throwable ignored) {
-            // HUD がまだ無い状況（ログイン直後など）では黙って無視する
-        }
     }
 
     /** 接続先アドレス。シングルプレイ/ LAN では "singleplayer"。 */

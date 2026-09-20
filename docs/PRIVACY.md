@@ -104,7 +104,6 @@ Minecraft は起動しない）。
   "collectJvmArgs": true,
   "hashFiles": true,
   "hashMaxBytes": 67108864,
-  "chatNotice": true,
 
   "collectInjection": true,        // 注入（Mixin / agent / ライブラリ名）の観測
   "knownMixinConfigs": [],         // 出所が分かっている Mixin 設定名（誤検知対策）

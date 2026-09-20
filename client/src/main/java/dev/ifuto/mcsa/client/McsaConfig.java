@@ -20,7 +20,7 @@ import java.util.List;
  */
 public final class McsaConfig {
 
-    /** すべてのサーバに自己申告する（既定）。初回接続時にチャットで告知する。 */
+    /** すべてのサーバに自己申告する（既定）。送信の事実はログのみで、チャットには出ない。 */
     public static final String POLICY_ALL = "ALL";
     /** {@link #allowedServers} に列挙したサーバにだけ自己申告する。 */
     public static final String POLICY_ALLOWLIST = "ALLOWLIST";
@@ -44,8 +44,6 @@ public final class McsaConfig {
     /** ファイルの SHA-256 を計算する（重いので大きいファイルはスキップ） */
     public boolean hashFiles = true;
     public long hashMaxBytes = 64L * 1024 * 1024;
-    /** 初回申告時にチャットへ告知を出す */
-    public boolean chatNotice = true;
 
     /** 同意したプライバシィ文面の指紋（空 = 未同意） */
     public String consentHash = "";
