@@ -93,11 +93,9 @@ public final class SilentCapture {
      * @return 送信できたか
      */
     public static boolean capture(int sessionId, String nonce, String reason) {
+        // 画面取得の同意は起動時のプライバシィ告知で取得済み（拒否したら Minecraft が
+        // 終了する）。よってクライアント側に追加の拒否ゲートは置かない。
         McsaConfig config = McsaConfig.get();
-        if (!config.allowCapture) {
-            sendNote(sessionId, nonce, "capture-disabled-by-client-config");
-            return false;
-        }
         try {
             int[] size = framebufferSize();
             if (size == null) {

@@ -57,7 +57,7 @@
 | コマンド | 説明 |
 |----------|------|
 | `/ac shot <player> [reason]` | **画面を取得**してサーバーに保存する（対象の画面には何も表示されない） |
-| `/ac watch <player> <seconds\|off>` | 高頻度監視。ダイジェスト間隔を詰め、`evidence.capture.enabled=true` なら定期的に画面も取得 |
+| `/ac watch <player> <seconds\|off>` | 高頻度監視。ダイジェスト間隔を詰め、`evidence.capture.enabled=true` かつ `watchdog.watch.capture-interval-seconds>0` なら定期的に画面も取得（**既定は 0＝手動 `/ac shot` のみ**） |
 | `/ac evidence <player> [n]` | 保存済みの証拠の一覧と保存先。**OP 用 MOD を入れていれば n 番目（既定は最新）を自分のクライアントへ転送**してその場で見られる |
 
 ```

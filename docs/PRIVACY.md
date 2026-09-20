@@ -57,12 +57,14 @@ Minecraft を起動すると、**プライバシィ告知の画面が出る**。
 
 ## 画面の取得（OP の指示があったときだけ）
 
-**この機能は既定で無効。** サーバー側 `evidence.capture.enabled: true` かつ
-クライアント側 `allowCapture: true` のときだけ、OP が `/ac shot` を打つと画面を送る。
+**この機能は既定で無効。** サーバー側 `evidence.capture.enabled: true` のときだけ、
+OP が `/ac shot` を打つと画面を送る。クライアント側の拒否ゲートは無い
+（起動時のプライバシィ告知への同意が画面取得も含む同意になる。拒否した場合、
+Minecraft は起動しない）。
 
 | 項目 | 内容 |
 |------|------|
-| いつ | OP が明示的にコマンドを打ったとき（自動では撮らない。`/ac watch` の間だけ定期取得） |
+| いつ | OP が明示的にコマンドを打ったとき（自動では撮らない。`/ac watch` の定期取得は `watchdog.watch.capture-interval-seconds` が 0 なら無効） |
 | 何を | その瞬間のゲーム画面 1 枚（PNG/JPEG）。音声・他のウィンドウ・ファイルは含まない |
 | どこへ | サーバーの `plugins/MCSA/evidence/<player>-<uuid8>/`。監査ログは `evidence-log.txt` |
 | 誰が分かる | 取得の事実は監査ログに「誰が・いつ・なぜ」が残る（OP 権限の悪用も追える） |
@@ -73,8 +75,6 @@ Minecraft を起動すると、**プライバシィ告知の画面が出る**。
 - その代わり、**使う前にルールで告知しておくことが前提**。
   隠し撮りを正当化するのは「事前に知らせてある」ことだけなので、
   告知なしで `evidence.capture.enabled` を true にしてはいけない。
-- プレイヤーは `config/mcsa/client.json` の `allowCapture: false` で拒否できる
-  （拒否するとサーバーには「拒否された」というテキストが届くので、黙って無視はできない）。
 - 保存した画像は調査目的に限り、`evidence.retention-days` で自動削除できる。
 
 ## 送られないもの（設計としてやっていない）
@@ -112,7 +112,6 @@ Minecraft を起動すると、**プライバシィ告知の画面が出る**。
   "extraClassPatterns": [],        // 追加で探すクラス名
   "watchdogIntervalSeconds": 45,   // 常時監視の間隔（0 で停止）
 
-  "allowCapture": true,            // false にすると画面取得の指示を拒否する
   "captureFormat": "PNG",          // PNG / JPEG
   "captureMaxWidth": 1600,         // 横幅の上限（超えたら縮小）
   "captureMaxBytes": 6291456,      // これを超えたら縮小して送り直す
@@ -126,7 +125,6 @@ Minecraft を起動すると、**プライバシィ告知の画面が出る**。
 - `collect*` を false にすると、その項目は送らず「`redacted` に項目名が入る」形で通知する
   （＝サーバー側には「隠した」ことが分かる。黙って欠落させることはできない）
 - `collectInjection: false` … Mixin / ライブラリ / jar の中身の観測を送らない（`redacted` に `injection`）
-- `allowCapture: false` … OP からの画面取得の指示を拒否する
 - `watchdogIntervalSeconds: 0` … 常時監視を止める（サーバーには「送ってこない」と見える）
 
 送信を拒否しても、導入必須のサーバー（`enforce.mode: LISTED / EVERYONE`）では入室を断られる。

@@ -74,9 +74,10 @@ public final class McsaClient implements ClientModInitializer {
         // 起動時だけ正常な顔をするタイプへの対策（常時監視）
         ReportBuilder.executor().execute(Watchdog::start);
 
-        LOGGER.info("[MCSA] 初期化完了 (version={}, protocol={}, reportPolicy={}, watchdog={}s, capture={})",
+        LOGGER.info("[MCSA] 初期化完了 (version={}, protocol={}, reportPolicy={}, watchdog={}s, "
+                        + "capture=on (起動時同意済み, format={}))",
                 modVersion(), PROTOCOL, McsaConfig.get().reportPolicy,
                 McsaConfig.get().watchdogIntervalSeconds,
-                McsaConfig.get().allowCapture ? "allowed" : "denied");
+                McsaConfig.get().captureFormat);
     }
 }

@@ -225,8 +225,9 @@ watchdog:
     max-seconds: 1800
     # 監視モード中のダイジェスト間隔（秒）
     digest-interval-seconds: 20
-    # 監視モード中の画面取得間隔（秒）。evidence.capture.enabled=false なら撮らない
-    capture-interval-seconds: 60
+    # 監視モード中の定期画面取得の間隔（秒）。0 で定期取得なし（手動の /ac shot だけ使う）
+    # evidence.capture.enabled=false なら定期・手動どちらも撮らない
+    capture-interval-seconds: 0
 
 # ---------------------------------------------------------------------------
 # プライバシィ告知（同意）

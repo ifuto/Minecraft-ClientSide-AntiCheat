@@ -64,8 +64,6 @@ public final class McsaConfig {
     /** 常時監視（ウォッチドッグ）の間隔（秒）。0 で停止 */
     public int watchdogIntervalSeconds = 45;
 
-    /** サーバーからの画面取得の指示を受け付ける */
-    public boolean allowCapture = true;
     /** 画像形式: PNG / JPEG */
     public String captureFormat = "PNG";
     /** JPEG の品質（0.2〜1.0） */

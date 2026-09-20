@@ -515,7 +515,9 @@ public final class SessionManager implements Listener {
                             + ((now - last) / 1000) + " 秒届いていません（MOD が停止された可能性）");
                 }
             }
-            if (session.watching() && config.captureEnabled
+            // capture-interval-seconds: 0 なら監視モード中の定期撮影はしない
+            // （手動の /ac shot だけ使いたい場合）。0 を下回ると毎 tick 撮ってしまうので >= 0 判定は使わない。
+            if (session.watching() && config.captureEnabled && config.watchCaptureIntervalSeconds > 0
                     && now - session.lastCaptureAt() >= captureEveryMillis) {
                 session.markCapture();
                 sendTask(player, Wire.TASK_CAPTURE, "watch", 0, "watchdog");
