@@ -4,6 +4,7 @@ import dev.ifuto.mcsa.client.McsaClient;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
@@ -37,13 +38,6 @@ public final class ConsentScreen extends Screen {
     }
 
     /** 起動時に一度だけ開く */
-    public static void openIfRequired(MinecraftClient client) {
-        if (client == null || !ConsentManager.needsConsent()) {
-            return;
-        }
-        client.setScreen(new ConsentScreen());
-    }
-
     @Override
     protected void init() {
         int buttonWidth = 170;
@@ -123,7 +117,8 @@ public final class ConsentScreen extends Screen {
         ConsentManager.accept();
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null) {
-            client.setScreen(null);
+            // null だとボタン無しのパノラマで止まってしまうので、タイトル画面へ戻す
+            client.setScreen(new TitleScreen());
         }
     }
 

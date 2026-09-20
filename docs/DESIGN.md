@@ -245,7 +245,9 @@ jar の中身を見るので取りこぼさない。逆に「jar を消してメ
 
 ```
 Minecraft 起動
-   └─ 最初の tick で ConsentScreen を表示（ESC では閉じられない）
+   └─ 初期ロード完了（CLIENT_STARTED）後、同意が済むまで毎 tick確認して
+      ConsentScreen を表示（ESC では閉じられない）。
+      ※ 最初の tick だとロード中で、後からタイトル画面に上書きされて消える
         ├─ I Agree        → 文面の SHA-256(先頭12) と時刻を config/mcsa/client.json に記録
         └─ Decline and Quit → 拒否を記録して Minecraft を終了（scheduleStop → stop → exit）
 ```

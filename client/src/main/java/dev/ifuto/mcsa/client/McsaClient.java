@@ -1,6 +1,7 @@
 package dev.ifuto.mcsa.client;
 
 import dev.ifuto.mcsa.client.collect.ReportBuilder;
+import dev.ifuto.mcsa.client.consent.ConsentManager;
 import dev.ifuto.mcsa.client.consent.ConsentScreen;
 import dev.ifuto.mcsa.client.integrity.SelfIntegrity;
 import dev.ifuto.mcsa.client.integrity.Watchdog;
@@ -10,6 +11,7 @@ import dev.ifuto.mcsa.client.net.Payloads;
 import dev.ifuto.mcsa.client.net.TaskPayload;
 import dev.ifuto.mcsa.client.net.Tasks;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
@@ -31,8 +33,8 @@ public final class McsaClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("MCSA");
 
     private static McsaClient instance;
-    /** 起動直後の 1 tick だけ同意画面を確認する */
-    private static volatile boolean consentChecked;
+    /** 初期ロードが終わったか（終わる前に画面を出すとタイトル画面に上書きされて消える） */
+    private static volatile boolean clientStarted;
 
     public static McsaClient get() {
         return instance;
@@ -59,13 +61,17 @@ public final class McsaClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(TaskPayload.ID,
                 (payload, context) -> Tasks.onTask(payload));
 
-        // 起動直後にプライバシィ告知を出す（同意するまでプレイできない）
+        // 起動後にプライバシィ告知を出す（同意するまでプレイできない）。
+        // 【重要】最初の tick で出すと、まだリソースのロード中で、後から表示される
+        // タイトル画面に上書きされて消えてしまう（実機で一度も出なかった事故の原因）。
+        // なので CLIENT_STARTED（初期ロード完了）の後、同意が済むまで毎 tick 確認する。
+        ClientLifecycleEvents.CLIENT_STARTED.register(client -> clientStarted = true);
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (consentChecked) {
+            if (!clientStarted || ConsentManager.accepted()
+                    || client.currentScreen instanceof ConsentScreen) {
                 return;
             }
-            consentChecked = true;
-            ConsentScreen.openIfRequired(client);
+            client.setScreen(new ConsentScreen());
         });
 
         // 起動時に一度だけ自己整合性を計算しておく（重いので非同期）
