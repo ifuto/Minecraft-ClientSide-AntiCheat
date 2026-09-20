@@ -11,7 +11,8 @@ import dev.ifuto.mcsa.client.net.Payloads;
 import dev.ifuto.mcsa.client.net.TaskPayload;
 import dev.ifuto.mcsa.client.net.Tasks;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.TitleScreen;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -35,6 +36,38 @@ public final class McsaClient implements ClientModInitializer {
 
     public static McsaClient get() {
         return instance;
+    }
+
+    /**
+     * ローディングオーバーレイ（初期ロード・リソース再読み込み中の例の画面）が
+     * 表示中か。この間に独自画面を描くとフォントの初期化と競合して
+     * ゲーム全体の文字が消える事故になるので、ここを見て待つ。
+     *
+     * <p>取得方法は版で変わるので、public メソッド → named フィールド →
+     * intermediary({@code field_18175}) → official({@code aW}) の順に試す。
+     * どれも取れない場合は「オーバーレイ無し」とみなす（タイトル画面の
+     * 表示確認だけでかなり絞れるため）。
+     */
+    private static boolean overlayActive(MinecraftClient client) {
+        if (client == null) {
+            return false;
+        }
+        try {
+            Object overlay = MinecraftClient.class.getMethod("getOverlay").invoke(client);
+            return overlay != null;
+        } catch (Throwable ignored) {
+            // public な getter は無い
+        }
+        for (String name : new String[]{"overlay", "field_18175", "aW"}) {
+            try {
+                java.lang.reflect.Field field = MinecraftClient.class.getDeclaredField(name);
+                field.setAccessible(true);
+                return field.get(client) != null;
+            } catch (Throwable ignored) {
+                // 次の候補へ
+            }
+        }
+        return false;
     }
 
     public static String modVersion() {

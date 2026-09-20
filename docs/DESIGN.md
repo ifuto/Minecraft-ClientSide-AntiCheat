@@ -245,10 +245,11 @@ jar の中身を見るので取りこぼさない。逆に「jar を消してメ
 
 ```
 Minecraft 起動
-   └─ 画面が初期化された直後（ScreenEvents.AFTER_INIT）に同意画面へ差し替え
-      （ESC では閉じられない）。差し替えは client.execute(...) で次 tick へ遅延。
-      ※ 最初の tick で出すとロード中でタイトル画面に上書きされ、
-        毎 tick setScreen で差し戻すとオーバーレイ中に暴走して画面が壊れる
+   └─ 「ローディングオーバーレイが消えた」＋「タイトル画面が表示中」の tick で
+      1 回だけ同意画面へ差し替え（ESC では閉じられない）
+      ※ ロード中（オーバーレイ表示中）に独自画面を描くとフォント初期化と競合して
+        ゲーム全体の文字が消える（build 26/27 で実際に起きた）。
+        差し替えは client.execute(...) で次 tick へ遅延
         ├─ I Agree        → 文面の SHA-256(先頭12) と時刻を config/mcsa/client.json に記録
         └─ Decline and Quit → 拒否を記録して Minecraft を終了（scheduleStop → stop → exit）
 ```
