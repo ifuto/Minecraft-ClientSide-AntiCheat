@@ -1,10 +1,10 @@
 package dev.ifuto.lessping.relay;
 
 import com.google.inject.Inject;
-import com.velocitypowered.api.command.Command;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.command.CommandSource;
+import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
@@ -337,10 +337,12 @@ public final class LessPingRelayPlugin {
 
     // ------------------------------------------------------------------ コマンド
 
-    private final class LpCommand implements Command {
+    // Velocity 4.x の Command は sealed（直接実装不可）なので Bukkit 風の
+    // SimpleCommand を使う
+    private final class LpCommand implements SimpleCommand {
 
         @Override
-        public void execute(Invocation invocation) {
+        public void execute(SimpleCommand.Invocation invocation) {
             CommandSource source = invocation.source();
             source.sendMessage(Component.text("[LessPing-NArena] 中継 v" + VERSION, NamedTextColor.GOLD));
             source.sendMessage(Component.text(
@@ -364,7 +366,7 @@ public final class LessPingRelayPlugin {
         }
 
         @Override
-        public boolean hasPermission(Invocation invocation) {
+        public boolean hasPermission(SimpleCommand.Invocation invocation) {
             return invocation.source().hasPermission("lessping.admin");
         }
     }

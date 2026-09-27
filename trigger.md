@@ -25,4 +25,4 @@ server_test: false
 # ビルド番号（この行を変えると push トリガーが走る）。
 # lessping をビルドするときは lessping/gradle.properties の lessping_version を
 # バージョンアップすること（mod / relay 共通）。
-build: 40
+build: 41
