@@ -1,0 +1,12 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+// LessPing-NArena: ルート = Fabric MOD（Loom）、:relay = Paper プラグイン。
+//   ./gradlew -p lessping build   … 両方ビルド + LPX ループバックテスト
+rootProject.name = 'lessping'
+include 'relay'

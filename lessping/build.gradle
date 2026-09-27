@@ -1,0 +1,53 @@
+plugins {
+    // Loom 1.14 以降のプラグイン ID（旧 'fabric-loom' は 1.18 でバリアントが解決できない）
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+    id 'java'
+}
+
+version = project.findProperty('lessping_version') ?: '0.1.0'
+group = 'dev.ifuto.lessping'
+base.archivesName = 'lessping-narena-mod'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+}
+
+processResources {
+    def v = project.version
+    inputs.property 'version', v
+    filesMatching('fabric.mod.json') {
+        expand 'version': v
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LPX ループバックテスト（ビルド時に必ず走る）
+//   2 台のエンドポイント間で 12% ロス + ジッタのある仮想リンク上に LPX ストリームを
+//   2 本張り、双方向 2MB のデータが欠落・破損・順序崩壊なしに届くことを確認する。
+//   失敗（タイムアウト / ハッシュ不一致）ならビルドを落とす。
+// ---------------------------------------------------------------------------
+tasks.register('lpxLoopbackTest', JavaExec) {
+    dependsOn classes
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.ifuto.lessping.tunnel.lpx.LpxLoopbackTest'
+    systemProperty 'lpx.test.timeoutSeconds', '120'
+}
+
+tasks.named('build') { dependsOn 'lpxLoopbackTest' }

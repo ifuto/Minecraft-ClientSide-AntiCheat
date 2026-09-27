@@ -294,6 +294,7 @@ Minecraft を起動するとプライバシィ告知が出る。**I Agree** で�
 client/                    Fabric MOD（MC 1.21.11 / Yarn / Java 21）
 admin/                     OP 用 Fabric MOD（/acadmin）
 server/                    Paper プラグイン（paper-api 1.21.11）
+lessping/                  LessPing-NArena（P2P トンネル MOD + 中継プラグイン。詳細は lessping/README.md）
 docs/DESIGN.md             設計・脅威モデル・改ざん対策の各層と、その破られ方
 docs/PROTOCOL.md           通信プロトコル（チャンネル、バイト配置、JSON、HMAC）
 docs/COMMANDS.md           /ac コマンド一覧

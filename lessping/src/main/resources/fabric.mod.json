@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "lessping",
+  "version": "${version}",
+  "name": "LessPing-NArena",
+  "description": "narena と入力するだけで P2P トンネル経由で直接接続し、遅延を減らします。",
+  "authors": [
+    "ifuto"
+  ],
+  "contact": {
+    "sources": "https://github.com/ifuto/Minecraft-ClientSide-AntiCheat"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.ifuto.lessping.LessPing"
+    ]
+  },
+  "mixins": [
+    "lessping.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

@@ -1,0 +1,16 @@
+name: LessPing-NArena
+version: '${version}'
+main: dev.ifuto.lessping.relay.LessPingRelayPlugin
+api-version: '${apiVersion}'
+description: LessPing-NArena のシグナリング中継。P2P トンネルのためにプレイヤーのエンドポイントを紹介し合う。
+author: ifuto
+website: https://github.com/ifuto/Minecraft-ClientSide-AntiCheat
+commands:
+  lessping:
+    description: LessPing-NArena の状態を表示する
+    aliases: [lp]
+    permission: lessping.admin
+permissions:
+  lessping.admin:
+    description: LessPing-NArena の管理コマンド
+    default: op
