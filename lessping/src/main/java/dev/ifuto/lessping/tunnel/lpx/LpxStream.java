@@ -217,8 +217,7 @@ public final class LpxStream {
             recvBuf.putIfAbsent(sn, payload);
             // 順番が揃った分から順にアプリへ流す
             while (!recvBuf.isEmpty() && recvBuf.firstKey() == nextExpected) {
-                byte[] bytes = recvBuf.removeFirst();
-                outbox.offer(bytes);
+                outbox.offer(recvBuf.pollFirstEntry().getValue());
                 nextExpected++;
             }
             ackDirty = true;
@@ -229,7 +228,6 @@ public final class LpxStream {
         int una = frame.una();
         int[] sns = frame.sns();
         long now = System.currentTimeMillis();
-        boolean fastRetransmit = false;
         synchronized (this) {
             lastActivity = now;
             for (Segment seg : queue) {
