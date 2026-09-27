@@ -180,8 +180,10 @@ public final class LpxStream {
         long deadline = System.currentTimeMillis() + 10_000;
         boolean doSend;
         synchronized (this) {
-            // 送り残しが無くなるまで待つ（最大 10 秒。相手が死んでいれば諦める）
-            while (!queue.isEmpty() && !sendClosed && !dead && !remoteClosed
+            // 送り残しが無くなるまで待つ（最大 10 秒）。
+            // 注意: remoteClosed（相手の送信終了）で待ってはいけない。相手はこちらの
+            // データを ACK し続けるので、フラッシュ完了まで送り切るべき。
+            while (!queue.isEmpty() && !sendClosed && !dead
                     && System.currentTimeMillis() < deadline) {
                 try {
                     wait(100);
