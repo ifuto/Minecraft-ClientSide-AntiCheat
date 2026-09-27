@@ -28,13 +28,11 @@ dependencies {
     annotationProcessor "com.velocitypowered:velocity-api:${velocityApi}"
 }
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
-}
-
+// velocity-api 4.x は Java 25 専用（org.gradle.jvm.version=25）なので、
+// このプラグインも release 25 でコンパイルする。Velocity 4.x プロキシは
+// それ自体が Java 25 で動くため、実行環境としても問題ない
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    it.options.release = 25
     it.options.encoding = 'UTF-8'
 }
 

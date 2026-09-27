@@ -25,7 +25,7 @@ v0.2 から **参加者は「narena」だけ打てばよく、先に本サーバ
 | `lessping-narena-relay-<ver>.jar`（**Velocity プラグイン**） | **サーバー（Velocity）** | ① ゲーム内シグナリング中継（SMP/PvP どちらにいても拾う） ② **ホスト側トンネル端末**（P2P の受け口。STUN・穴あけ・LPX→localhost Velocity 中継を全部この中で） |
 | `lessping-narena-mod-<ver>.jar`（Fabric MOD） | **参加者全員** | UDP トンネル本体。「narena」への接続をトンネルへ差し替える |
 
-MC 1.21.11 / Fabric（MOD）/ **Velocity 4.2 以上**（プラグイン）/ Java 21。
+MC 1.21.11 / Fabric（MOD）/ **Velocity 4.x（Java 25）**（プラグイン）/ Java 21。
 
 **サーバー主は MOD を入れなくてもよい**し、SMP / PvP 個々の Paper に入れるものもありません。
 
