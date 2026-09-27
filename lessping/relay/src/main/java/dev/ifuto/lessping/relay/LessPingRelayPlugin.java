@@ -58,14 +58,14 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 // 注意: version はリテラルで書くこと（定数参照はアノテーション処理中に
 // AnnotationTypeMismatchException になる）。リリース時は VERSION 定数と合わせる
-@Plugin(id = "lessping-narena", name = "LessPing-NArena", version = "0.2.1",
+@Plugin(id = "lessping-narena", name = "LessPing-NArena", version = "0.2.2",
         description = "LessPing-NArena のシグナリング中継 + ホスト側トンネル端末（P2P 直結）",
         url = "https://github.com/ifuto/Minecraft-ClientSide-AntiCheat",
         authors = {"ifuto"})
 public final class LessPingRelayPlugin {
 
     /** gradle.properties の lessping_version と合わせる */
-    public static final String VERSION = "0.2.1";
+    public static final String VERSION = "0.2.2";
 
     /** クライアント → プロキシ（HELLO / INTRO_REQUEST） */
     public static final MinecraftChannelIdentifier CHANNEL_IN =
@@ -319,7 +319,7 @@ public final class LessPingRelayPlugin {
     }
 
     /**
-     * サーバーリスト ping にホスト端末の候補アドレスを載せる（version 名の {@code LP1:...}）。
+     * サーバーリスト ping にホスト端末の候補アドレスを載せる（version 名の {@code LP1/LP2}）。
      * LessPing MOD はこれを読んで、本サーバーに入らずに直接穴あけを始める。
      * 通常のクライアントには（プロトコル一致なら）version 名は表示されない。
      * MOTD・人数などは Velocity が組み立てた内容をそのまま維持する。

@@ -4,7 +4,7 @@
 # 注意: Fabric Loom 1.18 は Gradle の実行に JDK 25 を必要とします（MC 26.x 世代の要件）。
 #       成果物のバイトコードは Java 21 向け（lessping/build.gradle の options.release=21）。
 #
-# 今の設定: LessPing-NArena 0.2.1（Velocity 移行）をビルド（lessping/ = MOD + Paper 中継プラグイン）。
+# 今の設定: LessPing-NArena 0.2.2（AES-GCM）をビルド（lessping/ = MOD + Paper 中継プラグイン）。
 #           「narena」と打つと P2P トンネルへ差し替えて ping を下げるやつ。
 #           ビルド時に LPX（reliable-UDP）のループバックテスト（12% ロスで双方向 2MB）
 #           が走る。失敗したらビルドが落ちる。
@@ -25,4 +25,4 @@ server_test: false
 # ビルド番号（この行を変えると push トリガーが走る）。
 # lessping をビルドするときは lessping/gradle.properties の lessping_version を
 # バージョンアップすること（mod / relay 共通）。
-build: 43
+build: 44

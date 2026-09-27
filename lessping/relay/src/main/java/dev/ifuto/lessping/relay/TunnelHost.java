@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit;
  * <ol>
  *   <li>STUN で自分の公開 UDP アドレスを調べ、定期的に更新（NAT マップの維持）</li>
  *   <li>候補アドレスをサーバーリスト ping 応答の version 名に載せて公開
- *       （{@code LP1:...}。LessPing MOD だけが読む。ゲーム通信は経由しない）</li>
+ *       （{@code LP1/LP2}。鍵を設定すると AES-GCM 暗号になる。LessPing MOD だけが読む）</li>
  *   <li>参加者からの PUNCH に PONG で応答（ホールパンチの成立）</li>
  *   <li>DATA が来たら LPX ストリームを張り、localhost の Velocity（backend）へ中継</li>
  * </ol>
@@ -142,7 +142,7 @@ public final class TunnelHost {
         return out;
     }
 
-    /** サーバーリスト ping の version 名に載せる blob（{@code LP1:...}） */
+    /** サーバーリスト ping の version 名に載せる blob（鍵なし=LP1 平文 / 鍵あり=LP2 暗号） */
     public String blob() {
         InetSocketAddress pub = publicEndpoint;
         StringBuilder sb = new StringBuilder("pub=");

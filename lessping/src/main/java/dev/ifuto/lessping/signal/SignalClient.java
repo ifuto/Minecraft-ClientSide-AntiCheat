@@ -18,7 +18,7 @@ import java.util.List;
  * サーバーリスト ping（status ping）を使ったシグナリング。
  *
  * <p>中継プラグインが Paper と同じ PC でトンネルの受け口を持ち、自分の
- * エンドポイント候補を status 応答の version 名（{@code LP1:...}）に載せている。
+ * エンドポイント候補を status 応答の version 名（{@code LP1:...} 平文 / {@code LP2:...} 暗号化）に載せている。
  * ここでは本物の Minecraft 接続を張らず、status ハンドシェイクだけで候補を取得する。
  *
  * <p>これにより「先に本サーバーに入って INTRO をもらう」必要がなく、
@@ -86,7 +86,7 @@ public final class SignalClient {
         }
     }
 
-    /** version 名（LP1:...）を候補アドレスへ分解。崩れていたら空リスト */
+    /** version 名（LP1/LP2）を候補アドレスへ分解。鍵不一致や破損なら空リスト */
     public static List<InetSocketAddress> parseVersionName(String versionName, String secret) {
         List<InetSocketAddress> out = new ArrayList<>();
         String data = LpSecret.decode(versionName, secret == null ? "" : secret);
