@@ -67,6 +67,19 @@ CLOSE フレーム自体がロスしても keepalive 間隔で再送される。
 3. **ゲームを起動していなくても参加者は「narena」で入れます**
    （自分が遊ぶときは今までどおり localhost 接続でOK。MOD は入れなくても可）
 
+### Velocity / 複数サーバー構成の場合（例: 25565 Velocity + 25566 SMP + 25567 PvP）
+
+1. relay プラグインは **try リストの先頭（デフォルト接続先）の Paper に 1 つだけ**入れる
+2. `host-endpoint.backend` を **`"127.0.0.1:25565"`（Velocity）** に設定する。
+   デフォルト（サーバー自身）のままだと Velocity をバイパスして backend に直結し、
+   modern forwarding 有効なら正しく処理されない。Velocity 指しなら `narena` は
+   「Minekube を抜いた直結版エントリ」と等価になり、`/server` でのサーバー間移動も
+   そのまま機能する（backend 同士はローカルなので追加遅延なし）
+3. `velocity.toml` の **`ping-passthrough = "all"`** が必須。これがないと Velocity が
+   自分で ping 応答を返すため `LP1:...` が参加者に届かない（未ログイン直行ができず、
+   ゲーム内 INTRO 経路 or フォールバックのみになる）。副作用: MOTD/人数表示が
+   バックエンド側のものになる
+
 ### 参加者
 
 1. MOD を入れる（Fabric API 必須）。設定は無編集で動く
