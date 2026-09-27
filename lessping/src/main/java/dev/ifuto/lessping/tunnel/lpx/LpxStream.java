@@ -19,9 +19,14 @@ import java.util.concurrent.TimeUnit;
  *       未 ACK のセグメント数は WINDOW 件まで（TCP のスライディングウィンドウと同じ）。
  *       書き込み側が多すぎるときはブロックして背圧をかける。</li>
  *   <li>受信: sn 順に並べ替えてからアプリへ渡す。穴の位置 (una) と受信済みの
- *       飛び飛び sn (SACK) を ACK で返す。</li>
+ *       飛び飛び sn (SACK) を ACK で返す。<b>重複 DATA が来たときも ACK を返す</b>
+ *       （ACK 自体がロスすると再送が止まらなくなるため）。</li>
  *   <li>再送: RTO（RTT から推定）によるタイムアウト再送と、ACK が 3 回同じ una を
  *       指したときの高速再送。</li>
+ *   <li>終了: {@link #close()} は TCP の shutdownOutput と同じ<b>半閉鎖</b>。
+ *       残りデータの ACK 待ちをしてから CLOSE を送る。相手からの CLOSE は
+ *       「もう相手からは来ない」印で、outbox はその時点までの全データを届けてから
+ *       EOF を流す（close で受信側まで殺さない）。</li>
  * </ul>
  *
  * <p>スレッド構成: {@link #write} はスプライススレッドから、{@link #onFrame} は
@@ -80,10 +85,17 @@ public final class LpxStream {
 
     private final LinkedBlockingQueue<byte[]> outbox = new LinkedBlockingQueue<>();
 
-    private boolean closed;
+    /** 自分の送信側を閉じた（FIN 送信済み）。それでも受信は続く */
+    private boolean sendClosed;
+    /** 相手から CLOSE が来た（もう相手からデータは来ない） */
     private boolean remoteClosed;
+    /** エラー等で完全に切断 */
+    private boolean dead;
+
     private long lastActivity = System.currentTimeMillis();
     private long lastSentAt = System.currentTimeMillis();
+    /** CLOSE を最後に送った時刻（ロス対策で相手に届くまで再送する） */
+    private long closeSentAt;
 
     private long srtt = -1;
     private long rttvar;
@@ -106,11 +118,17 @@ public final class LpxStream {
         return remote;
     }
 
-    public boolean isClosed() {
-        return closed;
+    /** 完全に終了（送受信両方向クローズ） */
+    public boolean finished() {
+        return dead || (sendClosed && remoteClosed);
     }
 
-    /** 相手から CLOSE が来た／接続が切れたあとに true */
+    /** 送信だけ閉じた状態か（受信はまだ続く） */
+    public boolean isSendClosed() {
+        return sendClosed;
+    }
+
+    /** 相手が送信を閉じたか（outbox が EOF に到達する） */
     public boolean isRemoteClosed() {
         return remoteClosed;
     }
@@ -142,10 +160,10 @@ public final class LpxStream {
             byte[] seg = new byte[chunk];
             System.arraycopy(data, pos, seg, 0, chunk);
             synchronized (this) {
-                while (!closed && queue.size() >= QUEUE_CAP) {
+                while (!sendClosed && !dead && queue.size() >= QUEUE_CAP) {
                     wait(1000);
                 }
-                if (closed) {
+                if (sendClosed || dead) {
                     return;
                 }
                 queue.addLast(new Segment(nextSn++, seg));
@@ -154,12 +172,17 @@ public final class LpxStream {
         }
     }
 
-    /** 接続を閉じる（残りデータの ACK 待ちをしてから CLOSE を送る = TCP の FIN と同じ） */
+    /**
+     * 送信側を閉じる（TCP の shutdownOutput に相当）。
+     * 残りデータの ACK 待ちをしてから CLOSE を送る。受信は継続する。
+     */
     public void close() {
         long deadline = System.currentTimeMillis() + 10_000;
+        boolean doSend;
         synchronized (this) {
             // 送り残しが無くなるまで待つ（最大 10 秒。相手が死んでいれば諦める）
-            while (!queue.isEmpty() && !remoteClosed && System.currentTimeMillis() < deadline) {
+            while (!queue.isEmpty() && !sendClosed && !dead && !remoteClosed
+                    && System.currentTimeMillis() < deadline) {
                 try {
                     wait(100);
                 } catch (InterruptedException e) {
@@ -167,10 +190,27 @@ public final class LpxStream {
                     break;
                 }
             }
-            if (closed) {
-                return;
+            doSend = !sendClosed && !dead;
+            sendClosed = true;
+            notifyAll();
+        }
+        if (doSend) {
+            synchronized (this) {
+                closeSentAt = System.currentTimeMillis();
             }
-            closed = true;
+            try {
+                sender.send(LpxFrame.simple(LpxFrame.T_CLOSE, conv), remote);
+            } catch (Throwable ignored) {
+                // ベストエフォート。tick で再送する
+            }
+        }
+    }
+
+    /** エラー・タイムアウト等で完全に切る（両方向。outbox にも即 EOF を流す） */
+    public void hardClose() {
+        synchronized (this) {
+            dead = true;
+            sendClosed = true;
             remoteClosed = true;
             notifyAll();
         }
@@ -190,12 +230,18 @@ public final class LpxStream {
             case LpxFrame.T_DATA -> onData(frame);
             case LpxFrame.T_ACK -> onAck(frame);
             case LpxFrame.T_CLOSE -> {
+                boolean firstTime;
                 synchronized (this) {
+                    firstTime = !remoteClosed;
                     remoteClosed = true;
-                    closed = true;
+                    lastActivity = System.currentTimeMillis();
                     notifyAll();
                 }
-                outbox.offer(EOF);
+                // CLOSE は相手が全データの ACK を確認してから送られるので、
+                // この時点で受信データは揃っている。EOF を流してよい（1 回だけ）。
+                if (firstTime) {
+                    outbox.offer(EOF);
+                }
             }
             default -> {
                 // KEEP などは TunnelManager 側で処理される
@@ -209,10 +255,13 @@ public final class LpxStream {
             lastActivity = System.currentTimeMillis();
             int sn = frame.sn();
             if (sn < nextExpected) {
-                return; // 重複
+                // 重複（相手の ACK がロスした可能性）→ 必ず再 ACK する
+                ackDirty = true;
+                return;
             }
             if (recvBuf.size() >= RECV_CAP) {
-                return; // 並べ替えバッファいっぱい → 捨てて RTO 再送に任せる
+                // 並べ替えバッファいっぱい → 捨てて RTO 再送に任せる
+                return;
             }
             recvBuf.putIfAbsent(sn, payload);
             // 順番が揃った分から順にアプリへ流す
@@ -253,6 +302,7 @@ public final class LpxStream {
             // ACK 済みの先頭を捨ててウィンドウを進める
             while (!queue.isEmpty() && queue.peekFirst().acked) {
                 queue.pollFirst();
+                notifyAll(); // close() のフラッシュ待ちを起こす
             }
             // 高速再送: 同じ una が 3 回続いた = 先頭が落ちている
             if (una == lastFastUna) {
@@ -281,10 +331,9 @@ public final class LpxStream {
         byte[] keepFrame = null;
         List<byte[]> toSend = null;
         synchronized (this) {
-            if (closed) {
+            if (dead) {
                 return;
             }
-            lastActivity = Math.max(lastActivity, 0);
             // 1) 未送信セグメントをウィンドウの空きぶんだけ送る
             int inflight = 0;
             for (Segment seg : queue) {
@@ -308,13 +357,19 @@ public final class LpxStream {
                     inflight++;
                 }
             }
-            // 3) 受信したら ACK を返す
+            // 3) 受信したら ACK を返す（重複受信でも）
             if (ackDirty) {
                 ackDirty = false;
                 ackFrame = buildAck();
             }
-            // 4) アイドルなら keepalive
-            if (now - lastSentAt > keepaliveMs) {
+            // 4) アイドルなら keepalive。送信を閉じたら CLOSE を受け取ってもらえるまで
+            //    再送し続ける（conn 解体で dead になったら止まる。6 バイト/keepalive 間隔）
+            if (sendClosed && queue.isEmpty()) {
+                if (closeSentAt > 0 && now - closeSentAt > keepaliveMs) {
+                    keepFrame = LpxFrame.simple(LpxFrame.T_CLOSE, conv);
+                    closeSentAt = now;
+                }
+            } else if (now - lastSentAt > keepaliveMs) {
                 keepFrame = LpxFrame.simple(LpxFrame.T_KEEP, conv);
             }
         }
@@ -388,14 +443,15 @@ public final class LpxStream {
         return "conv=" + conv + " inflight=" + inflight + " queued=" + queue.size()
                 + " retransmits=" + retrans + " nextExpected=" + nextExpected
                 + " srtt=" + (srtt < 0 ? "-" : srtt + "ms") + " rto=" + rto + "ms"
-                + (closed ? " CLOSED" : "");
+                + (sendClosed ? " FIN" : "") + (remoteClosed ? " REMOTE-FIN" : "")
+                + (dead ? " DEAD" : "");
     }
 
-    /** テスト用: outbox が EOF を返すまで待つ */
-    public void awaitEof(long timeoutMs) throws InterruptedException {
+    /** テスト用: 相手からの CLOSE が来るまで待つ */
+    public void awaitRemoteClose(long timeoutMs) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
-            if (isRemoteClosed()) {
+            if (remoteClosed || dead) {
                 return;
             }
             TimeUnit.MILLISECONDS.sleep(5);

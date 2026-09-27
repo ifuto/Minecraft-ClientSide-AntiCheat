@@ -556,8 +556,8 @@ public final class TunnelManager {
         for (Conn conn : conns.values()) {
             conn.stream().tick(now);
             if (now - conn.stream().lastActivity() > STREAM_IDLE_MS
-                    || (conn.stream().isClosed() && conn.stream().isRemoteClosed())) {
-                conn.stream().close();
+                    || conn.stream().finished()) {
+                conn.stream().hardClose();
                 closeQuietly(conn.tcp());
                 conns.remove(conn.stream().conv());
             }
@@ -696,7 +696,7 @@ public final class TunnelManager {
     public void shutdown() {
         stopped = true;
         for (Conn conn : conns.values()) {
-            conn.stream().close();
+            conn.stream().hardClose();
             closeQuietly(conn.tcp());
         }
         conns.clear();

@@ -162,7 +162,7 @@ public final class LpxLoopbackTest {
         System.out.println("[LPX-TEST] B " + streamB.stats());
 
         if (!ok) {
-            System.out.println("[LPX-TEST] 失敗: データが完全には届かなかった");
+            System.out.println("error: [LPX-TEST] 失敗: データが完全には届かなかった");
             System.exit(1);
         }
         System.out.println("[LPX-TEST] 成功: 双方向 " + BYTES + " bytes が完全に届いた");
@@ -197,14 +197,14 @@ public final class LpxLoopbackTest {
 
     private static boolean check(String label, byte[] expected, byte[] actual) {
         if (expected.length != actual.length) {
-            System.out.println("[LPX-TEST] " + label + ": 長さ不一致 expected="
+            System.out.println("error: [LPX-TEST] " + label + ": 長さ不一致 expected="
                     + expected.length + " actual=" + actual.length);
             return false;
         }
         String expectedHash = sha256(expected);
         String actualHash = sha256(actual);
         if (!expectedHash.equals(actualHash)) {
-            System.out.println("[LPX-TEST] " + label + ": ハッシュ不一致 "
+            System.out.println("error: [LPX-TEST] " + label + ": ハッシュ不一致 "
                     + expectedHash + " != " + actualHash);
             return false;
         }
