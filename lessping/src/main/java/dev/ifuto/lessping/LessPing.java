@@ -26,7 +26,7 @@ import org.slf4j.LoggerFactory;
 public final class LessPing implements ClientModInitializer {
 
     /** gradle.properties の lessping_version と合わせる */
-    public static final String VERSION = "0.3.0";
+    public static final String VERSION = "0.3.1";
 
     public static final Logger LOGGER = LoggerFactory.getLogger("lessping");
 

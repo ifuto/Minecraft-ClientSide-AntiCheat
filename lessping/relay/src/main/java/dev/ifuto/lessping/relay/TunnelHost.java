@@ -178,7 +178,15 @@ public final class TunnelHost {
         return "UDP " + udp.getLocalPort() + ", 公開=" + publicEndpoint
                 + ", LAN候補=" + lanCandidates().size() + "件"
                 + ", 接続中=" + conns.size() + "/" + settings.maxConns()
-                + ", 認証=" + (settings.secret() == null || settings.secret().isEmpty() ? "なし(公開)" : "あり");
+                + ", 認証=" + authLabel();
+    }
+
+    private String authLabel() {
+        String s = settings.secret() == null ? "" : settings.secret();
+        if (s.isEmpty()) {
+            return "なし(公開)";
+        }
+        return LpSecret.DEFAULT_SECRET.equals(s) ? "内蔵鍵" : "独自鍵";
     }
 
     // ------------------------------------------------------------------ 受信

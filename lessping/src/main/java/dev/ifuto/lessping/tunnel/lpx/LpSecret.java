@@ -30,6 +30,13 @@ import java.util.Base64;
  */
 public final class LpSecret {
 
+    /**
+     * 内蔵の既定共有鍵。両側（MOD / プラグイン）が設定なしのときに使う。
+     * これにより「サーバーアドレスを知っただけの人」には ping から IP を読めなくなる。
+     * ただしソースが公開されているので本気の防御には独自鍵を設定すること
+     */
+    public static final String DEFAULT_SECRET = "narena-lp1-4d7a2e89b6c5f3a1d0e9b8c7a6f5e4d3";
+
     /** 平文（認証なし）モードの接頭辞 */
     public static final String PREFIX_PLAIN = "LP1:";
     /** AES-GCM 暗号化モードの接頭辞 */
@@ -43,6 +50,28 @@ public final class LpSecret {
     private static final int TAG_BITS = 128;
 
     private LpSecret() {
+    }
+
+    /**
+     * 設定値を実効鍵へ解決する（MOD / プラグインで同じ挙動にするためここに置く）。
+     * <ul>
+     *   <li>null / 空 → 内蔵鍵（{@link #DEFAULT_SECRET}）</li>
+     *   <li>{@code "none"}（大文字小文字問わず）→ 空文字（オープン運用: LP1 平文・誰でも穴あけ可）</li>
+     *   <li>それ以外 → その値（独自鍵）</li>
+     * </ul>
+     */
+    public static String resolve(String configured) {
+        if (configured == null) {
+            return DEFAULT_SECRET;
+        }
+        String v = configured.trim();
+        if (v.isEmpty()) {
+            return DEFAULT_SECRET;
+        }
+        if ("none".equalsIgnoreCase(v)) {
+            return "";
+        }
+        return v;
     }
 
     /** PUNCH トークン。鍵が空なら定数、なければ HMAC-SHA256 の先頭 8 バイト */

@@ -2,6 +2,7 @@ package dev.ifuto.lessping;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import dev.ifuto.lessping.tunnel.lpx.LpSecret;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
@@ -51,7 +52,11 @@ public final class LpConfig {
     /** シグナリングのポーリング間隔（ミリ秒）。トンネル確立中はポーリングしない */
     public int signalPollMs = 15000;
 
-    /** サーバー側 host-endpoint.secret と揃える共有鍵（空なら無認証） */
+    /**
+     * サーバー側 host-endpoint.secret と揃える共有鍵。
+     * 空 = 内蔵鍵（既定・設定不要）、"none" = 無認証（平文 LP1）、
+     * それ以外 = 独自鍵。実効値は {@link #effectiveSecret()} で取得する
+     */
     public String secret = "";
 
     /**
@@ -112,6 +117,11 @@ public final class LpConfig {
 
     public static Path configFile() {
         return FabricLoader.getInstance().getConfigDir().resolve("lessping").resolve("client.json");
+    }
+
+    /** 実効鍵。空 = 内蔵鍵、"none" = 無認証、それ以外 = その値 */
+    public String effectiveSecret() {
+        return LpSecret.resolve(secret);
     }
 
     /** "host:port" を分解する。ポート省略時は fallbackPort */

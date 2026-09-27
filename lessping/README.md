@@ -73,7 +73,9 @@ CLOSE フレーム自体がロスしても keepalive 間隔で再送される。
      （Velocity 版がシグナリングを吸収するため二重になる）
    - `velocity.toml` の設定変更（`ping-passthrough` 等）は**不要**
 2. 設定は `plugins/lessping-narena/config.properties` に生成されるが、
-   **既定のままで動く**（転送先 = この Velocity 自身、UDP ポート自動）
+   **既定のままで動く**（転送先 = この Velocity 自身、UDP ポート自動、鍵 = 内蔵鍵）。
+   ※ v0.3.1 から鍵まわりの既定が変わったので、**MOD も 0.3.1 以降に揃えること**
+   （古い MOD とは P2P が張れず、CF/Minekube 経由にフォールバックする）
 3. 確認: コンソールに
    ```
    ホスト端末を開始: UDP xxxx → backend 127.0.0.1:25565
@@ -132,14 +134,17 @@ WebSocket ブリッジ(:8081) ──▶ localhost の Velocity(25565) ──▶ 
 
 - トンネル自体の暗号化は v1 では**ない**（Minecraft プロトコルのオンラインモード暗号は
   エンドツーエンドでそのまま効く）
-- 鍵を設定しない場合、サーバーアドレスを知る人は誰でも（status ping で候補を
-  見て）トンネルを張れる = 本サーバーに接続できるのと同じ範囲。
-  **候補アドレス（= サーバーPC の IP）も ping 応答を見れば分かる**（`LP1:` 平文）
-- `host-endpoint.secret` を設定すると、応答は **AES-256-GCM で暗号化**（`LP2:`）され、
-  正しい鍵を持つ人だけが読める（鍵不一致はタグ検証で弾かれる）。PUNCH も鍵から
-  導出したトークンが必須になる。**サーバーPC の IP を公開したくないなら必ず設定する**
-- ただし P2P 直結の性質上、**鍵を共有して実際に繋いだ相手は（鍵がなくても）あなたの
-  IP を知る**。これは直結である以上避けられない（隠すならリレー経由しかない）
+- **既定で内蔵鍵が有効**（v0.3.1〜・設定不要）。ping 応答は **AES-256-GCM で暗号化**
+  （`LP2:`）され、PUNCH も鍵から導出したトークンが必須。**サーバーアドレスを知った
+  だけの人には、サーバーPC の IP を読めず、トンネルも張れない**
+- ただし内蔵鍵は MOD に入っており GitHub でも公開されている。**MOD を手に入れた人
+  なら解読できる**（信頼境界が「アドレスを知る人」から「MOD を持る人」に上がるだけ）。
+  本気で隠すなら `host-endpoint.secret` に独自鍵を設定し、参加者にも
+  `config/lessping/client.json` の `secret` に同じ値を設定してもらう。
+  `"none"` を設定すると無認証の平文運用（`LP1:`）に戻る
+- P2P 直結の性質上、**実際に繋いだ相手は（鍵がなくても）あなたの IP を知る**。
+  これは直結である以上避けられない。IP を見せたくない相手には CF 経由（WSS）で
+  入ってもらうか、`host-endpoint.publish: false` で直結候補の公開を止める
 - 中継プラグインが扱うのは「アドレスの紹介」だけ。**ゲームトラフィックは一切流れない**
 - 「narena」という名前はドメインではない（ドット無し）ので、MOD を抜けば
   バニラの挙動は「接続できない」だけ
@@ -154,7 +159,7 @@ WebSocket ブリッジ(:8081) ──▶ localhost の Velocity(25565) ──▶ 
 | `signalServer` | `"n-arena.play.minekube.net"` | シグナリング・フォールバックの予備経路（直接 TCP）。ここに status ping を打つ |
 | `signalPollMs` | `15000` | シグナリングのポーリング間隔（トンネル未確立時のみ） |
 | `hostPlayer` | `"Ifuto_mitai"` | ゲーム内 INTRO 経路で誰とのトンネルを張るか |
-| `secret` | `""` | サーバー側 `host-endpoint.secret` と揃える共有鍵 |
+| `secret` | `""`（内蔵鍵） | 共有鍵。空 = 内蔵鍵、`"none"` = 無認証、独自鍵はサーバー側と同じ値を |
 | `hostMode` | `false` | （旧）クライアント自身がトンネルの受け手になる。プラグイン端末があれば不要 |
 | `localTcpPort` | `25599` | ローカル受け口（Minecraft はここへ接続する） |
 | `udpPort` | `0`（自動） | UDP のポート。固定したいときだけ指定 |
@@ -169,7 +174,7 @@ WebSocket ブリッジ(:8081) ──▶ localhost の Velocity(25565) ──▶ 
 | `host-endpoint.enabled` | `true` | ホスト端末（サーバーPC で P2P の受け口）を有効にする |
 | `host-endpoint.udp-port` | `0`（自動） | 端末の UDP ポート |
 | `host-endpoint.backend` | 空（この Velocity 自身） | トンネルで受けた接続の転送先 |
-| `host-endpoint.secret` | 空 | 共有鍵（設定すると鍵を持つ人だけトンネル可、応答は AES-GCM 暗号化） |
+| `host-endpoint.secret` | 空（内蔵鍵） | 空 = 内蔵鍵、`"none"` = 無認証、独自鍵 = 本気で隠すとき（応答は AES-GCM 暗号化） |
 | `host-endpoint.stun-servers` | Cloudflare / Google | 公開アドレスを調べる STUN（カンマ区切り） |
 | `host-endpoint.stun-interval-ms` | `30000` | STUN 更新間隔（NAT マップの維持） |
 | `host-endpoint.publish` | `true` | ping 応答に候補を載せるか（false でゲーム内 INTRO 経路のみ） |

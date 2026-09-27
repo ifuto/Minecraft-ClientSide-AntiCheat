@@ -224,7 +224,7 @@ public final class TunnelManager {
         ioPool.execute(() -> {
             try {
                 List<InetSocketAddress> candidates =
-                        SignalClient.fetchCandidates(server, config.secret, config.wsUrl);
+                        SignalClient.fetchCandidates(server, config.effectiveSecret(), config.wsUrl);
                 if (candidates.isEmpty()) {
                     if (urgent) {
                         LessPing.LOGGER.info("[LessPing] {} からホストのエンドポイントを取得できませんでした"
@@ -653,8 +653,11 @@ public final class TunnelManager {
                 }
                 switch (frame.type()) {
                     case LpxFrame.T_PUNCH -> {
-                        knownAddrs.put(from, System.currentTimeMillis());
-                        send(LpxFrame.token(LpxFrame.T_PONG, frame.conv(), frame.token()), from);
+                        // 正しいトークン（= 鍵を共有する相手）の PUNCH だけ応答する
+                        if (frame.token() == LpSecret.punchToken(config.effectiveSecret())) {
+                            knownAddrs.put(from, System.currentTimeMillis());
+                            send(LpxFrame.token(LpxFrame.T_PONG, frame.conv(), frame.token()), from);
+                        }
                     }
                     case LpxFrame.T_PONG -> {
                         knownAddrs.put(from, System.currentTimeMillis());
@@ -848,7 +851,7 @@ public final class TunnelManager {
             return;
         }
         peer.punchTries++;
-        long token = LpSecret.punchToken(config.secret == null ? "" : config.secret);
+        long token = LpSecret.punchToken(config.effectiveSecret());
         for (InetSocketAddress candidate : peer.candidates) {
             punchTokens.put(token, new PunchTarget(peer.name, candidate, System.currentTimeMillis()));
             peer.pendingTokens.put(candidate, token);
