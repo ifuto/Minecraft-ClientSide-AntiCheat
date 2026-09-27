@@ -35,25 +35,30 @@ public final class SignalClient {
     private SignalClient() {
     }
 
+    /** シグナリングの結果。reached = サーバー自体には応答した（候補が空でも） */
+    public record SignalResult(boolean reached, List<InetSocketAddress> candidates) {
+    }
+
     /**
      * サーバーに status ping を送り、ホストのエンドポイント候補を取得する。
-     * どれかの段階で失敗したら空リストを返す（例外は投げない）。
+     * 例外は投げない。
+     *
+     * <p>{@code reached=true で candidates が空}は「サーバーは生きているが P2P 候補を
+     * 出していない」（= P2P 無効の運用）。この場合呼び出し側は待たずにフォールバック
+     * 経路（WebSocket）へ進んでよい。
      *
      * @param server 直接 TCP 経路のサーバーアドレス（wsUrl が失敗したときの予備）
      * @param secret サーバー側と揃えた共有鍵（無ければ空文字）
      * @param wsUrl WebSocket 経路（例: wss://narena.dpdns.org）。空なら直接 TCP のみ
      */
-    public static List<InetSocketAddress> fetchCandidates(String server, String secret, String wsUrl) {
+    public static SignalResult fetchCandidates(String server, String secret, String wsUrl) {
         // 1) WebSocket 経由（Cloudflare Tunnel 等。設定されていれば優先）
         if (wsUrl != null && !wsUrl.isBlank()) {
             try (WsLink.WsConnection ws = WsLink.WsConnection.connect(wsUrl, 5000)) {
                 String[] hp = wsTarget(wsUrl);
                 List<InetSocketAddress> candidates =
                         parseVersionName(ping(ws.in(), ws.out(), hp[0]), secret);
-                if (!candidates.isEmpty()) {
-                    return candidates;
-                }
-                // 接続はできたが候補が無い（プラグイン未導入等）→ 直接経路も試す
+                return new SignalResult(true, candidates);
             } catch (Exception ignored) {
                 // 次の経路へ
             }
@@ -64,10 +69,10 @@ public final class SignalClient {
             socket.connect(new InetSocketAddress(hp[0], Integer.parseInt(hp[1])), 4000);
             socket.setSoTimeout(4000);
             socket.setTcpNoDelay(true);
-            return parseVersionName(
-                    ping(socket.getInputStream(), socket.getOutputStream(), hp[0]), secret);
+            return new SignalResult(true, parseVersionName(
+                    ping(socket.getInputStream(), socket.getOutputStream(), hp[0]), secret));
         } catch (Exception e) {
-            return List.of();
+            return new SignalResult(false, List.of());
         }
     }
 

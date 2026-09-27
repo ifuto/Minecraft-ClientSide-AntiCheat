@@ -58,14 +58,14 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 // 注意: version はリテラルで書くこと（定数参照はアノテーション処理中に
 // AnnotationTypeMismatchException になる）。リリース時は VERSION 定数と合わせる
-@Plugin(id = "lessping-narena", name = "LessPing-NArena", version = "0.3.1",
+@Plugin(id = "lessping-narena", name = "LessPing-NArena", version = "0.3.2",
         description = "LessPing-NArena のシグナリング中継 + ホスト側トンネル端末（P2P 直結）",
         url = "https://github.com/ifuto/Minecraft-ClientSide-AntiCheat",
         authors = {"ifuto"})
 public final class LessPingRelayPlugin {
 
     /** gradle.properties の lessping_version と合わせる */
-    public static final String VERSION = "0.3.1";
+    public static final String VERSION = "0.3.2";
 
     /** クライアント → プロキシ（HELLO / INTRO_REQUEST） */
     public static final MinecraftChannelIdentifier CHANNEL_IN =
@@ -114,7 +114,7 @@ public final class LessPingRelayPlugin {
         CommandMeta meta = commands.metaBuilder("lessping").aliases("lp").plugin(this).build();
         commands.register(meta, new LpCommand());
 
-        if (getBool("host-endpoint.enabled", true)) {
+        if (getBool("host-endpoint.enabled", false)) {
             try {
                 tunnelHost = new TunnelHost(logger, buildSettings());
                 tunnelHost.start();

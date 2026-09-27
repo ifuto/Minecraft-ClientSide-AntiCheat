@@ -110,6 +110,8 @@ public final class TunnelManager {
     /** シグナリング（サーバーリスト ping 経由）の実行中フラグと前回時刻 */
     private final AtomicBoolean signalBusy = new AtomicBoolean(false);
     private volatile long lastSignalPollAt;
+    /** サーバーが P2P 候補を出していない（= P2P 無効の運用）。待たずにフォールバックしてよい */
+    private volatile boolean p2pUnavailable;
 
     private record PunchTarget(String peer, InetSocketAddress candidate, long sentAt) {
     }
@@ -223,9 +225,20 @@ public final class TunnelManager {
         }
         ioPool.execute(() -> {
             try {
-                List<InetSocketAddress> candidates =
+                SignalClient.SignalResult result =
                         SignalClient.fetchCandidates(server, config.effectiveSecret(), config.wsUrl);
-                if (candidates.isEmpty()) {
+                if (result.reached() && result.candidates().isEmpty()) {
+                    // サーバーは応答したが P2P 候補を出していない（host-endpoint.enabled=false
+                    // の運用）。P2P を待たずに WebSocket 経由へ進んでよい
+                    if (!p2pUnavailable) {
+                        LessPing.LOGGER.info("[LessPing] サーバーは P2P 直結を受け付けていません"
+                                + "（WebSocket 経由で接続します）");
+                    }
+                    p2pUnavailable = true;
+                    return;
+                }
+                p2pUnavailable = false;
+                if (result.candidates().isEmpty()) {
                     if (urgent) {
                         LessPing.LOGGER.info("[LessPing] {} からホストのエンドポイントを取得できませんでした"
                                 + "（プラグイン未導入 or 応答なし）", server);
@@ -233,8 +246,8 @@ public final class TunnelManager {
                     return;
                 }
                 LessPing.LOGGER.info("[LessPing] サーバーからホスト ({}) のエンドポイントを受信: {}"
-                        + "（穴あけ開始）", config.hostPlayer, candidates);
-                punchPeer(config.hostPlayer, candidates, true);
+                        + "（穴あけ開始）", config.hostPlayer, result.candidates());
+                punchPeer(config.hostPlayer, result.candidates(), true);
             } finally {
                 signalBusy.set(false);
             }
@@ -392,13 +405,14 @@ public final class TunnelManager {
         }
         Peer host = hostPeer();
         boolean wsReady = config.wsUrl != null && !config.wsUrl.isBlank();
-        if (host == null || !host.ready()) {
+        if ((host == null || !host.ready()) && !p2pUnavailable) {
             LessPing.LOGGER.info("[LessPing] トンネル準備中… シグナリングして最大 {} 秒待ちます",
                     wsReady ? 5 : 10);
             pollSignal(true);
             long deadline = System.currentTimeMillis() + (wsReady ? 5_000L : 10_000L);
             while ((host = hostPeer()) == null || !host.ready()) {
-                if (stopped || System.currentTimeMillis() >= deadline) {
+                // p2pUnavailable が立ったら（サーバーが P2P 無効の運用）即フォールバック
+                if (stopped || p2pUnavailable || System.currentTimeMillis() >= deadline) {
                     host = null;
                     break;
                 }
@@ -896,8 +910,12 @@ public final class TunnelManager {
         if (!config.hostMode && config.signalServer != null && !config.signalServer.isBlank()
                 && config.hostPlayer != null && !config.hostPlayer.isBlank()) {
             Peer host = peers.get(config.hostPlayer.toLowerCase());
-            if ((host == null || !host.ready())
-                    && now - lastSignalPollAt > Math.max(3000, config.signalPollMs)) {
+            // P2P 無効の運用と分かっている場合はポーリングを間引く（再び有効化された
+            // ときに追いつけるよう、完全には止めない）
+            long interval = p2pUnavailable
+                    ? Math.max(60_000L, config.signalPollMs * 4L)
+                    : Math.max(3000, config.signalPollMs);
+            if ((host == null || !host.ready()) && now - lastSignalPollAt > interval) {
                 lastSignalPollAt = now;
                 pollSignal(false);
             }
