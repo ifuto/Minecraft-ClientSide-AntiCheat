@@ -56,7 +56,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>ゲームの通信はこのプロキシを経由しない（P2P）。ホールパンチが失敗する
  * （対称 NAT 等）場合は通常接続にフォールバックするだけ。
  */
-@Plugin(id = "lessping-narena", name = "LessPing-NArena", version = VERSION,
+// 注意: version はリテラルで書くこと（定数参照はアノテーション処理中に
+// AnnotationTypeMismatchException になる）。リリース時は VERSION 定数と合わせる
+@Plugin(id = "lessping-narena", name = "LessPing-NArena", version = "0.2.1",
         description = "LessPing-NArena のシグナリング中継 + ホスト側トンネル端末（P2P 直結）",
         url = "https://github.com/ifuto/Minecraft-ClientSide-AntiCheat",
         authors = {"ifuto"})
