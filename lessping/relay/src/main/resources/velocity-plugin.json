@@ -1,0 +1,10 @@
+{
+  "id": "lessping-narena",
+  "name": "LessPing-NArena",
+  "version": "${version}",
+  "description": "LessPing-NArena のシグナリング中継 + ホスト側トンネル端末。P2P トンネルのためにエンドポイントを紹介し合う。",
+  "url": "https://github.com/ifuto/Minecraft-ClientSide-AntiCheat",
+  "authors": ["ifuto"],
+  "dependencies": [],
+  "main": "dev.ifuto.lessping.relay.LessPingRelayPlugin"
+}

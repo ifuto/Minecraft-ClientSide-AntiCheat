@@ -6,9 +6,7 @@ version = project.findProperty('lessping_version') ?: '0.1.0'
 group = 'dev.ifuto.lessping'
 base.archivesName = 'lessping-narena-relay'
 
-def mcVersion = project.findProperty('minecraft_version') ?: '1.21.11'
-def paperApi = project.findProperty('paper_api_version') ?: "${mcVersion}-R0.1-SNAPSHOT"
-def apiVersion = project.findProperty('plugin_api_version') ?: (mcVersion.toString().split('\\\\.')[0..1].join('.'))
+def velocityApi = project.findProperty('velocity_api_version') ?: '4.2.0'
 
 // MOD 側と共有する純粋 Java のプロトコル実装（LpxFrame / LpxStream / Stun / LpSecret）。
 // このフォルダには Minecraft に依存するクラスは無いのでプラグインからも直接コンパイルする
@@ -26,7 +24,8 @@ repositories {
 }
 
 dependencies {
-    compileOnly "io.papermc.paper:paper-api:${paperApi}"
+    compileOnly "com.velocitypowered:velocity-api:${velocityApi}"
+    annotationProcessor "com.velocitypowered:velocity-api:${velocityApi}"
 }
 
 java {
@@ -41,17 +40,15 @@ tasks.withType(JavaCompile).configureEach {
 
 processResources {
     def v = project.version
-    def api = apiVersion
     inputs.property 'version', v
-    inputs.property 'apiVersion', api
-    filesMatching('plugin.yml') {
-        expand 'version': v, 'apiVersion': api
+    filesMatching('velocity-plugin.json') {
+        expand 'version': v
     }
 }
 
 tasks.register('printCoordinates') {
     doLast {
-        logger.lifecycle("[LessPing] paper-api=${paperApi} api-version=${apiVersion} version=${version}")
+        logger.lifecycle("[LessPing] velocity-api=${velocityApi} version=${version}")
     }
 }
 tasks.named('build') { dependsOn 'printCoordinates' }

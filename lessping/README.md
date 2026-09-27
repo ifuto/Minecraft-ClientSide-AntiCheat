@@ -8,44 +8,50 @@ Hamachi / ZeroTier / Tailscale と同じ発想。Minekube トンネルなどの*
 
 ```
 今:     友達 ──▶ Minekubeリレー（遠回り）──▶ サーバーPC      ping = 経由の分だけ増える
-LessPing: 友達のMOD ⇄ UDP ホールパンチで直結 ⇄ サーバーPC のプラグイン ──▶ localhost の Paper
+LessPing: 友達のMOD ⇄ UDP ホールパンチで直結 ⇄ サーバーPC のプラグイン ──▶ localhost の Velocity
                                                                ping = 物理的な最短経路
 ```
 
-v0.2.0 から **参加者は「narena」だけ打てばよく、先に本サーバーに入る必要はありません**。
+v0.2 から **参加者は「narena」だけ打てばよく、先に本サーバーに入る必要はありません**。
 また **サーバー主はゲームを起動していなくても OK**（ホスト側のトンネル端末は
-Paper プラグイン自身が務めます）。
+**Velocity プラグイン**自身が務めます）。v0.2.1 で Paper プラグインから
+**Velocity プラグイン**に移行し、SMP / PvP のどちらのサーバーにいるプレイヤーにも
+対応しました。
 
 ## 構成要素
 
 | 成果物 | 入れる人 | 役割 |
 |--------|----------|------|
-| `lessping-narena-relay-<ver>.jar`（Paper プラグイン） | **サーバー** | ① ゲーム内シグナリング中継 ② **ホスト側トンネル端末**（P2P の受け口。STUN・穴あけ・LPX→localhost Paper 中継を全部この中で） |
+| `lessping-narena-relay-<ver>.jar`（**Velocity プラグイン**） | **サーバー（Velocity）** | ① ゲーム内シグナリング中継（SMP/PvP どちらにいても拾う） ② **ホスト側トンネル端末**（P2P の受け口。STUN・穴あけ・LPX→localhost Velocity 中継を全部この中で） |
 | `lessping-narena-mod-<ver>.jar`（Fabric MOD） | **参加者全員** | UDP トンネル本体。「narena」への接続をトンネルへ差し替える |
 
-MC 1.21.11 / Fabric（MOD）/ Paper（プラグイン）/ Java 21。
+MC 1.21.11 / Fabric（MOD）/ **Velocity 4.2 以上**（プラグイン）/ Java 21。
 
-**サーバー主は MOD を入れなくてもよくなりました**（入れればゲーム内 HELLO 経路も使える）。
+**サーバー主は MOD を入れなくてもよい**し、SMP / PvP 個々の Paper に入れるものもありません。
 
-## 仕組み（v0.2.0）
+## 仕組み
 
-1. Paper プラグインが起動すると、**サーバーPC 上で UDP 端末**を開き、STUN で
+1. Velocity プラグインが起動すると、**サーバーPC 上で UDP 端末**を開き、STUN で
    自分の公開アドレスを調べる（30 秒ごとに更新 = NAT マップの維持）
 2. プラグインはサーバーリスト ping（status ping）の応答の **version 名**に
-   自分の候補アドレスを `LP1:...` として載せる。通常のクライアントには
-   （プロトコル一致なら）表示されないし、ゲーム通信はこの経路を流れない
+   自分の候補アドレスを `LP1:...` として載せる。MOTD や人数は Velocity の通常応答を
+   そのまま維持。通常のクライアントには（プロトコル一致なら）version 名は表示されず、
+   ゲーム通信もこの経路を流れない
 3. 参加者の MOD は**クライアント起動直後**にその ping を打って候補を取得 → 穴あけ開始
    （本サーバーにログインする必要がない。15 秒ごとに再試行し、確立したら stop）
 4. 両者で UDP パンチが成功したら **直接トンネル確立**（keepalive で維持）
 5. 参加者がマルチプレイのアドレス欄に **`narena`** と入力して接続 →
-   MOD がアドレス解決を差し替え、トンネル経由でサーバーPC の Paper へ直結
+   MOD がアドレス解決を差し替え、トンネル経由でサーバーPC の **Velocity** へ直結。
+   トンネルは 25565 と同じ入り口（プロキシ直下）なので **`/server` での SMP⇔PvP 移動も
+   そのまま使える**（バックエンド間はローカルなので追加遅延なし）
    - サーバーリストの ping 表示もトンネル経由（実際の直結 RTT が表示される）
    - まだトンネルが張れていないときは最大 10 秒待って、それでもダメなら
      **自動的に通常経路（本サーバー経由）へ接続**。「narena」が繋がらなくなることは無い
 6. （従来のゲーム内経路も並行して動く: 両者が本サーバーに入っていれば
-   HELLO/INTRO でも紹介し合う。どちらか先に確立した方が使われる）
+   HELLO/INTRO でも紹介し合う。SMP と PvP の**どちらにいても**プロキシが受け取る。
+   どちらか先に確立した方が使われる）
 
-**トンネルは Minecraft の接続と独立した純 UDP** なので、サーバーを出入りしても
+**トンネルは Minecraft の接続と独立した純粋 UDP** なので、サーバーを出入りしても
 張り直し不要。穴あけに失敗しても（対称 NAT など）通常接続にフォールバックするだけ。
 
 LPX の終了処理は TCP 準拠の半閉鎖: `close()` は自分の送信側だけを閉じ
@@ -57,28 +63,20 @@ CLOSE フレーム自体がロスしても keepalive 間隔で再送される。
 
 ### サーバー主（ホスト）
 
-1. Paper の `plugins/` に `lessping-narena-relay-<ver>.jar` を入れて起動。**以上**
-   - 端末の UDP ポートは自動。転送先はサーバー自身（Paper のポート）
-   - 確認: コンソールに `ホスト端末を開始: UDP ....`、サーバーリスト ping に
-     `LP1:...` が載る（`/lp` でも状態が見られる）
-2. （任意）`plugins/LessPing-NArena/config.yml` の `host-endpoint.secret` に
-   共有鍵を設定すると、鍵を持つ参加者だけがトンネルを張れる
-   （その場合、参加者は `config/lessping/client.json` の `secret` に同じ値を設定）
-3. **ゲームを起動していなくても参加者は「narena」で入れます**
-   （自分が遊ぶときは今までどおり localhost 接続でOK。MOD は入れなくても可）
-
-### Velocity / 複数サーバー構成の場合（例: 25565 Velocity + 25566 SMP + 25567 PvP）
-
-1. relay プラグインは **try リストの先頭（デフォルト接続先）の Paper に 1 つだけ**入れる
-2. `host-endpoint.backend` を **`"127.0.0.1:25565"`（Velocity）** に設定する。
-   デフォルト（サーバー自身）のままだと Velocity をバイパスして backend に直結し、
-   modern forwarding 有効なら正しく処理されない。Velocity 指しなら `narena` は
-   「Minekube を抜いた直結版エントリ」と等価になり、`/server` でのサーバー間移動も
-   そのまま機能する（backend 同士はローカルなので追加遅延なし）
-3. `velocity.toml` の **`ping-passthrough = "all"`** が必須。これがないと Velocity が
-   自分で ping 応答を返すため `LP1:...` が参加者に届かない（未ログイン直行ができず、
-   ゲーム内 INTRO 経路 or フォールバックのみになる）。副作用: MOTD/人数表示が
-   バックエンド側のものになる
+1. **Velocity の `plugins/`** に `lessping-narena-relay-<ver>.jar` を入れて
+   Velocity を再起動。**以上**（SMP / PvP 側に何も入れる必要はない）
+   - 旧 Paper 版プラグイン（v0.2.0 以前）がバックエンドに入っている場合は**削除**する
+     （Velocity 版がシグナリングを吸収するため二重になる）
+   - `velocity.toml` の設定変更（`ping-passthrough` 等）は**不要**
+2. 設定は `plugins/lessping-narena/config.properties` に生成されるが、
+   **既定のままで動く**（転送先 = この Velocity 自身、UDP ポート自動）
+3. 確認: コンソールに
+   ```
+   ホスト端末を開始: UDP xxxx → backend 127.0.0.1:25565
+   ```
+   と出れば OK。プロキシのコンソールやゲーム内で **`/lp`** を打つと状態が見られる
+4. **ゲームを起動していなくても参加者は「narena」で入れます**
+   （自分が遊ぶときは今までどおり localhost / 通常アドレスで OK。MOD は入れなくても可）
 
 ### 参加者
 
@@ -125,23 +123,25 @@ CLOSE フレーム自体がロスしても keepalive 間隔で再送される。
 | `stunServers` | Cloudflare / Google | 自分のアドレスを調べる STUN |
 | `idleTimeoutMs` | `20000` | これ以上音信がなければトンネル断とみなす |
 
-## 設定（サーバー `plugins/LessPing-NArena/config.yml`）
+## 設定（サーバー `plugins/lessping-narena/config.properties`）
 
 | キー | 既定 | 意味 |
 |------|------|------|
 | `host-endpoint.enabled` | `true` | ホスト端末（サーバーPC で P2P の受け口）を有効にする |
 | `host-endpoint.udp-port` | `0`（自動） | 端末の UDP ポート |
-| `host-endpoint.backend` | `""`（サーバー自身） | トンネルで受けた接続の転送先 |
-| `host-endpoint.secret` | `""` | 共有鍵（設定すると鍵を持つ人だけトンネル可、応答もマスク） |
-| `host-endpoint.stun-servers` | Cloudflare / Google | 公開アドレスを調べる STUN |
+| `host-endpoint.backend` | 空（この Velocity 自身） | トンネルで受けた接続の転送先 |
+| `host-endpoint.secret` | 空 | 共有鍵（設定すると鍵を持つ人だけトンネル可、応答もマスク） |
+| `host-endpoint.stun-servers` | Cloudflare / Google | 公開アドレスを調べる STUN（カンマ区切り） |
 | `host-endpoint.stun-interval-ms` | `30000` | STUN 更新間隔（NAT マップの維持） |
 | `host-endpoint.publish` | `true` | ping 応答に候補を載せるか（false でゲーム内 INTRO 経路のみ） |
 | `host-endpoint.max-connections` | `32` | 同時に受け付けるトンネル接続の上限 |
+| `debug` | `false` | シグナリングの詳細ログ |
+| `freshness-ms` | `600000` | ゲーム内 INTRO のエントリ鮮度 |
 
-## コマンド（サーバー）
+## コマンド（Velocity）
 
 - `/lessping`（`/lp`）— ホスト端末の状態（UDP ポート・公開アドレス・接続数・認証）と
-  登録済みプレイヤーを表示
+  登録済みプレイヤーを表示（権限 `lessping.admin`、コンソールでも可）
 
 ## 開発
 
@@ -157,4 +157,5 @@ CLOSE フレーム自体がロスしても keepalive 間隔で再送される。
   ホスト端末の候補を取り出すシグナリングクライアント
 - `mixin/AllowedAddressResolverMixin` — 接続とサーバーリスト ping の両方の
   アドレス解決を差し替える
-- `relay/TunnelHost.java` — サーバーPC 側のトンネル端末（STUN・PUNCH・LPX→backend）
+- `relay/TunnelHost.java` — サーバーPC 側のトンネル端末（STUN・PUNCH・LPX→backend）。
+  Velocity API に依存しない純粋 Java

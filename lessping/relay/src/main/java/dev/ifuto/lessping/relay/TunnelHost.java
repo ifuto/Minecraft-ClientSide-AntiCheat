@@ -4,7 +4,7 @@ import dev.ifuto.lessping.tunnel.lpx.LpxFrame;
 import dev.ifuto.lessping.tunnel.lpx.LpSecret;
 import dev.ifuto.lessping.tunnel.lpx.LpxStream;
 import dev.ifuto.lessping.tunnel.lpx.Stun;
-import org.bukkit.Bukkit;
+import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,18 +32,21 @@ import java.util.concurrent.TimeUnit;
  * ホスト側トンネル端末（このプラグイン自身が持つ）。
  *
  * <p>サーバー主のクライアントがゲームを起動していなくても参加者が
- * 「narena」で直結できるように、Paper と同じ PC 上で UDP 端末を務める:
+ * 「narena」で直結できるように、Velocity と同じ PC 上で UDP 端末を務める:
  *
  * <ol>
  *   <li>STUN で自分の公開 UDP アドレスを調べ、定期的に更新（NAT マップの維持）</li>
  *   <li>候補アドレスをサーバーリスト ping 応答の version 名に載せて公開
  *       （{@code LP1:...}。LessPing MOD だけが読む。ゲーム通信は経由しない）</li>
  *   <li>参加者からの PUNCH に PONG で応答（ホールパンチの成立）</li>
- *   <li>DATA が来たら LPX ストリームを張り、localhost の Paper（backend）へ中継</li>
+ *   <li>DATA が来たら LPX ストリームを張り、localhost の Velocity（backend）へ中継</li>
  * </ol>
  *
  * <p>セキュリティ: {@code host-endpoint.secret} を設定すると、正しいトークンの
  * PUNCH だけを受け付け、ping に載せる情報もマスクされる。
+ *
+ * <p>このクラスは Minecraft / Velocity の API に依存しない純粋 Java（MOD 側の
+ * TunnelManager と同じ構造）。設定は {@link Settings} で渡す。
  */
 public final class TunnelHost {
 
@@ -52,16 +55,14 @@ public final class TunnelHost {
     /** PUNCH 済みアドレスからの新規接続を許可する期間 */
     private static final long KNOWN_ADDR_TTL_MS = 60_000;
 
-    private final LessPingRelayPlugin plugin;
-    private final int udpPort;
-    private final String backendHost;
-    private final int backendPort;
-    private final String secret;
-    private final List<String> stunServers;
-    private final long stunIntervalMs;
-    private final long keepaliveMs;
-    private final int maxConns;
-    private final boolean publish;
+    /** ホスト端末の設定（プラグイン側で config.properties から組み立てる） */
+    public record Settings(int udpPort, String backendHost, int backendPort, String secret,
+                           List<String> stunServers, long stunIntervalMs, long keepaliveMs,
+                           int maxConns, boolean publish, String version) {
+    }
+
+    private final Logger logger;
+    private final Settings settings;
 
     private DatagramSocket udp;
     private Thread receiveThread;
@@ -91,45 +92,24 @@ public final class TunnelHost {
     private record StunPending(byte[] txid, CompletableFuture<InetSocketAddress> future) {
     }
 
-    public TunnelHost(LessPingRelayPlugin plugin) {
-        this.plugin = plugin;
-        this.udpPort = plugin.getConfig().getInt("host-endpoint.udp-port", 0);
-        String backend = plugin.getConfig().getString("host-endpoint.backend", "");
-        if (backend == null || backend.isBlank()) {
-            // 指定がなければサーバー自身（Paper の bind アドレスとポート）
-            String ip = Bukkit.getIp();
-            this.backendHost = (ip == null || ip.isBlank()) ? "127.0.0.1" : ip;
-            this.backendPort = Bukkit.getPort();
-        } else {
-            String[] hp = backend.split(":");
-            this.backendHost = hp[0].isBlank() ? "127.0.0.1" : hp[0];
-            this.backendPort = Integer.parseInt(hp[hp.length - 1]);
-        }
-        this.secret = plugin.getConfig().getString("host-endpoint.secret", "");
-        this.stunServers = plugin.getConfig().getStringList("host-endpoint.stun-servers");
-        if (this.stunServers.isEmpty()) {
-            this.stunServers.addAll(List.of("stun.cloudflare.com:3478", "stun.l.google.com:19302"));
-        }
-        this.stunIntervalMs = Math.max(10_000L, plugin.getConfig().getLong("host-endpoint.stun-interval-ms", 30_000L));
-        this.keepaliveMs = 5000L;
-        this.maxConns = Math.max(1, plugin.getConfig().getInt("host-endpoint.max-connections", 32));
-        this.publish = plugin.getConfig().getBoolean("host-endpoint.publish", true);
+    public TunnelHost(Logger logger, Settings settings) {
+        this.logger = logger;
+        this.settings = settings;
     }
 
     // ------------------------------------------------------------------ ライフサイクル
 
     public void start() throws IOException {
-        udp = new DatagramSocket(new InetSocketAddress(udpPort));
+        udp = new DatagramSocket(new InetSocketAddress(settings.udpPort()));
         udp.setReceiveBufferSize(1 << 20);
         stopped = false;
         receiveThread = new Thread(this::receiveLoop, "lessping-host-udp");
         receiveThread.setDaemon(true);
         receiveThread.start();
         timer.scheduleWithFixedDelay(this::tick, 10, 10, TimeUnit.MILLISECONDS);
-        timer.scheduleWithFixedDelay(this::stunRefresh, 0, stunIntervalMs, TimeUnit.MILLISECONDS);
-        plugin.getLogger().info("ホスト端末を開始: UDP " + udp.getLocalPort()
-                + " → backend " + backendHost + ":" + backendPort
-                + "（ゲーム起動なしで「narena」から直結できます）");
+        timer.scheduleWithFixedDelay(this::stunRefresh, 0, settings.stunIntervalMs(), TimeUnit.MILLISECONDS);
+        logger.info("ホスト端末を開始: UDP {} → backend {}:{}（ゲーム起動なしで「narena」から直結できます）",
+                udp.getLocalPort(), settings.backendHost(), settings.backendPort());
     }
 
     public void stop() {
@@ -178,12 +158,12 @@ public final class TunnelHost {
             first = false;
             sb.append(lan.getHostString()).append(':').append(lan.getPort());
         }
-        sb.append("|host=1|src=plugin|v=").append(plugin.getDescription().getVersion());
-        return LpSecret.encode(sb.toString(), secret);
+        sb.append("|host=1|src=plugin|v=").append(settings.version());
+        return LpSecret.encode(sb.toString(), settings.secret());
     }
 
     public boolean shouldPublish() {
-        return publish && !candidates().isEmpty();
+        return settings.publish() && !candidates().isEmpty();
     }
 
     public boolean isStarted() {
@@ -197,8 +177,8 @@ public final class TunnelHost {
         }
         return "UDP " + udp.getLocalPort() + ", 公開=" + publicEndpoint
                 + ", LAN候補=" + lanCandidates().size() + "件"
-                + ", 接続中=" + conns.size() + "/" + maxConns
-                + ", 認証=" + (secret == null || secret.isEmpty() ? "なし(公開)" : "あり");
+                + ", 接続中=" + conns.size() + "/" + settings.maxConns()
+                + ", 認証=" + (settings.secret() == null || settings.secret().isEmpty() ? "なし(公開)" : "あり");
     }
 
     // ------------------------------------------------------------------ 受信
@@ -230,12 +210,12 @@ public final class TunnelHost {
                 }
                 switch (frame.type()) {
                     case LpxFrame.T_PUNCH -> {
-                        long expected = LpSecret.punchToken(secret);
+                        long expected = LpSecret.punchToken(settings.secret());
                         if (frame.token() == expected) {
                             knownAddrs.put(from, System.currentTimeMillis());
                             send(LpxFrame.token(LpxFrame.T_PONG, frame.conv(), frame.token()), from);
-                        } else if (plugin.getConfig().getBoolean("debug", false)) {
-                            plugin.getLogger().warning("トークン不一致の PUNCH を無視: " + from);
+                        } else if (settings.secret() != null && !settings.secret().isEmpty()) {
+                            logger.warn("トークン不一致の PUNCH を無視: {}", from);
                         }
                     }
                     case LpxFrame.T_KEEP -> {
@@ -254,7 +234,7 @@ public final class TunnelHost {
                 }
             } catch (Throwable t) {
                 if (!stopped) {
-                    plugin.getLogger().warning("受信エラー: " + t);
+                    logger.warn("受信エラー: {}", t.toString());
                 }
             }
         }
@@ -269,8 +249,8 @@ public final class TunnelHost {
             if (lastSeen == null || System.currentTimeMillis() - lastSeen > KNOWN_ADDR_TTL_MS) {
                 return; // 穴あけしていない相手からのデータは無視
             }
-            if (conns.size() >= maxConns) {
-                plugin.getLogger().warning("接続数が上限 (" + maxConns + ") に達したので拒否: " + frame.from());
+            if (conns.size() >= settings.maxConns()) {
+                logger.warn("接続数が上限 ({}) に達したので拒否: {}", settings.maxConns(), frame.from());
                 send(LpxFrame.simple(LpxFrame.T_CLOSE, conv), frame.from());
                 return;
             }
@@ -282,23 +262,23 @@ public final class TunnelHost {
         conn.stream().onFrame(frame);
     }
 
-    /** 新しい conv が来たら backend（localhost の Paper）へ中継する */
+    /** 新しい conv が来たら backend（localhost の Velocity）へ中継する */
     private Conn openConn(int conv, InetSocketAddress remote) {
         try {
             Socket tcp = new Socket();
             tcp.setTcpNoDelay(true);
-            tcp.connect(new InetSocketAddress(backendHost, backendPort), 5000);
+            tcp.connect(new InetSocketAddress(settings.backendHost(), settings.backendPort()), 5000);
             LpxStream stream = new LpxStream(conv, remote,
-                    (frame, to) -> send(frame, to), keepaliveMs);
+                    (frame, to) -> send(frame, to), settings.keepaliveMs());
             Conn conn = new Conn(stream, tcp);
             conns.put(conv, conn);
-            plugin.getLogger().info("新しい接続を中継開始 conv=" + conv + " " + remote
-                    + " → " + backendHost + ":" + backendPort);
+            logger.info("新しい接続を中継開始 conv={} {} → {}:{}",
+                    conv, remote, settings.backendHost(), settings.backendPort());
             splice(stream, tcp);
             return conn;
         } catch (Exception e) {
-            plugin.getLogger().warning("backend へ接続できません (" + backendHost + ":" + backendPort
-                    + "): " + e);
+            logger.warn("backend へ接続できません ({}:{}): {}",
+                    settings.backendHost(), settings.backendPort(), e.toString());
             send(LpxFrame.simple(LpxFrame.T_CLOSE, conv), remote);
             return null;
         }
@@ -374,17 +354,17 @@ public final class TunnelHost {
         if (stopped) {
             return;
         }
-        for (String server : stunServers) {
+        for (String server : settings.stunServers()) {
             InetSocketAddress result = queryStun(server);
             if (result != null) {
                 if (publicEndpoint == null || !result.equals(publicEndpoint)) {
-                    plugin.getLogger().info("公開アドレス: " + result + "（STUN " + server + " 経由）");
+                    logger.info("公開アドレス: {}（STUN {} 経由）", result, server);
                 }
                 publicEndpoint = result;
                 return;
             }
         }
-        plugin.getLogger().warning("STUN に全部失敗（インターネット越えの候補を出せません）");
+        logger.warn("STUN に全部失敗（インターネット越えの候補を出せません）");
     }
 
     private InetSocketAddress queryStun(String server) {
