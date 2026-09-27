@@ -1,5 +1,6 @@
 package dev.ifuto.lessping.relay;
 
+import com.destroystokyo.paper.event.server.PaperServerListPingEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -45,6 +46,8 @@ public final class LessPingRelayPlugin extends JavaPlugin implements PluginMessa
     private final Map<String, PeerInfo> peers = new ConcurrentHashMap<>();
     /** まだオフラインの対象への紹介要求（対象の小文字名 → 要求者の小文字名） */
     private final Map<String, Set<String>> pendingRequests = new ConcurrentHashMap<>();
+    /** ホスト側トンネル端末（このサーバーと同じ PC で P2P の受け口を務める） */
+    private TunnelHost tunnelHost;
 
     private record PeerInfo(String name, String data, long at) {
     }
@@ -55,12 +58,25 @@ public final class LessPingRelayPlugin extends JavaPlugin implements PluginMessa
         getServer().getMessenger().registerIncomingPluginChannel(this, CHANNEL_IN, this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, CHANNEL_OUT);
         getServer().getPluginManager().registerEvents(this, this);
+        if (getConfig().getBoolean("host-endpoint.enabled", true)) {
+            try {
+                tunnelHost = new TunnelHost(this);
+                tunnelHost.start();
+            } catch (Exception e) {
+                getLogger().severe("ホスト端末を開始できません: " + e);
+                tunnelHost = null;
+            }
+        }
         getLogger().info("LessPing-NArena 中継を開始（"
                 + getDescription().getVersion() + "）。ゲーム通信は経由しません（P2P）。");
     }
 
     @Override
     public void onDisable() {
+        if (tunnelHost != null) {
+            tunnelHost.stop();
+            tunnelHost = null;
+        }
         peers.clear();
         pendingRequests.clear();
     }
@@ -148,6 +164,18 @@ public final class LessPingRelayPlugin extends JavaPlugin implements PluginMessa
 
     // ------------------------------------------------------------------ イベント
 
+    /**
+     * サーバーリスト ping にホスト端末の候補アドレスを載せる（version 名の {@code LP1:...}）。
+     * LessPing MOD はこれを読んで、本サーバーに入らずに直接穴あけを始める。
+     * 通常のクライアントには（プロトコル一致なら）version 名は表示されない。
+     */
+    @EventHandler
+    public void onServerListPing(PaperServerListPingEvent event) {
+        if (tunnelHost != null && tunnelHost.isStarted() && tunnelHost.shouldPublish()) {
+            event.setVersion(tunnelHost.blob());
+        }
+    }
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         String key = event.getPlayer().getName().toLowerCase(Locale.ROOT);
@@ -161,6 +189,8 @@ public final class LessPingRelayPlugin extends JavaPlugin implements PluginMessa
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         List<String> names = peers.values().stream().map(PeerInfo::name).sorted().toList();
         sender.sendMessage("§6[LessPing-NArena] §7中継 v" + getDescription().getVersion());
+        sender.sendMessage("§7ホスト端末: §f" + (tunnelHost == null ? "無効"
+                : tunnelHost.describe()));
         sender.sendMessage("§7登録済み: §f" + (names.isEmpty() ? "なし" : String.join(", ", names)));
         if (!pendingRequests.isEmpty()) {
             sender.sendMessage("§7待機中の紹介要求: " + pendingRequests.size() + " 件");

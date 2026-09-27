@@ -41,6 +41,19 @@ public final class LpConfig {
     /** hostMode のとき、届いた接続の転送先 */
     public String backend = "127.0.0.1:25565";
 
+    /**
+     * サーバーリスト ping でシグナリングする相手（本サーバーのアドレス）。
+     * 中継プラグインがホスト端末の候補を version 名に載せて応答する。
+     * 空文字にするとこの経路は無効（ゲーム内 INTRO のみになる）
+     */
+    public String signalServer = "n-arena.play.minekube.net";
+
+    /** シグナリングのポーリング間隔（ミリ秒）。トンネル確立中はポーリングしない */
+    public int signalPollMs = 15000;
+
+    /** サーバー側 host-endpoint.secret と揃える共有鍵（空なら無認証） */
+    public String secret = "";
+
     /** 自分のアドレス (ip:port) を調べる STUN サーバー */
     public List<String> stunServers = new ArrayList<>(List.of(
             "stun.cloudflare.com:3478",

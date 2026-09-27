@@ -10,6 +10,16 @@ def mcVersion = project.findProperty('minecraft_version') ?: '1.21.11'
 def paperApi = project.findProperty('paper_api_version') ?: "${mcVersion}-R0.1-SNAPSHOT"
 def apiVersion = project.findProperty('plugin_api_version') ?: (mcVersion.toString().split('\\\\.')[0..1].join('.'))
 
+// MOD 側と共有する純粋 Java のプロトコル実装（LpxFrame / LpxStream / Stun / LpSecret）。
+// このフォルダには Minecraft に依存するクラスは無いのでプラグインからも直接コンパイルする
+sourceSets {
+    main {
+        java {
+            srcDir '../src/main/java/dev/ifuto/lessping/tunnel/lpx'
+        }
+    }
+}
+
 repositories {
     mavenCentral()
     maven { url = 'https://repo.papermc.io/repository/maven-public/' }

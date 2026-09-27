@@ -2,10 +2,14 @@ package dev.ifuto.lessping.tunnel;
 
 import dev.ifuto.lessping.LessPing;
 import dev.ifuto.lessping.LpConfig;
+import dev.ifuto.lessping.signal.SignalClient;
 import dev.ifuto.lessping.signal.SignalPayload;
 import dev.ifuto.lessping.tunnel.lpx.LpxFrame;
+import dev.ifuto.lessping.tunnel.lpx.LpSecret;
 import dev.ifuto.lessping.tunnel.lpx.LpxStream;
+import dev.ifuto.lessping.tunnel.lpx.Stun;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.SharedConstants;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,17 +37,23 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * トンネルの総括（シングルトン）。
  *
  * <pre>
- * ① サーバーに参加したら HELLO（自分のエンドポイント情報）を中継プラグインへ送る
+ * ⓪ クライアント起動直後、サーバーリスト ping 経由でシグナリング（v0.2.0〜）。
+ *    中継プラグインが Paper と同じ PC で持つ「ホスト端末」の候補アドレスを
+ *    status 応答の version 名から受け取り、穴あけを始める。本サーバーに入る必要なし
+ * ① （従来経路）サーバーに参加したら HELLO を中継プラグインへ送る
  * ② INTRO（相手のエンドポイント）が届いたら UDP ホールパンチを開始
  * ③ PONG が返ってきたらトンネル確立。keepalive で維持
  * ④ Minecraft が「narena」へ接続するとき、アドレス解決を 127.0.0.1:localTcpPort
  *    へ差し替える（mixin）。ローカル TCP ⇄ LPX ストリーム（UDP）をスプライスし、
- *    ホスト側では backend（localhost の Paper）へ中継する
+ *    ホスト側では backend（localhost の Paper）へ中継する。
+ *    まだトンネルが無ければ最大 10 秒待って、ダメなら signalServer（本サーバー）へ
+ *    素通しして通常接続として続行（「narena」が繋がらなくなることは無い）
  * </pre>
  *
  * <p>トンネル自体は純粋な UDP なので、Minecraft の接続が切れても生き続ける
@@ -97,6 +107,9 @@ public final class TunnelManager {
     private volatile InetSocketAddress publicEndpoint;
     private volatile long publicEndpointAt;
     private volatile String selfName = "";
+    /** シグナリング（サーバーリスト ping 経由）の実行中フラグと前回時刻 */
+    private final AtomicBoolean signalBusy = new AtomicBoolean(false);
+    private volatile long lastSignalPollAt;
 
     private record PunchTarget(String peer, InetSocketAddress candidate, long sentAt) {
     }
@@ -155,8 +168,16 @@ public final class TunnelManager {
         }
         for (String magic : config.magicNames) {
             if (magic.equalsIgnoreCase(host)) {
+                if (localTcp == null || localTcp.isClosed()) {
+                    return Optional.empty();
+                }
                 Peer host1 = peers.get(config.hostPlayer == null ? "" : config.hostPlayer.toLowerCase());
-                if (host1 != null && host1.ready() && localTcp != null && !localTcp.isClosed()) {
+                if (host1 != null && host1.ready()) {
+                    return Optional.of(new InetSocketAddress("127.0.0.1", localTcp.getLocalPort()));
+                }
+                // まだ確立していなくても、シグナリング先があるなら楽観的にローカル受け口へ。
+                // 接続時に最大 10 秒待って、それでもダメなら通常経路へフォールバックする
+                if (config.signalServer != null && !config.signalServer.isBlank()) {
                     return Optional.of(new InetSocketAddress("127.0.0.1", localTcp.getLocalPort()));
                 }
                 return Optional.empty();
@@ -166,6 +187,59 @@ public final class TunnelManager {
     }
 
     // ------------------------------------------------------------------ 参加
+
+    /**
+     * クライアント起動直後に呼ぶ。サーバーに入っていなくても、サーバーリスト ping
+     * 経由のシグナリング（{@link SignalClient}）で先にトンネルを張り始める。
+     */
+    public void clientStarted() {
+        if (!enabled || stopped) {
+            return;
+        }
+        try {
+            ensureStarted();
+        } catch (IOException e) {
+            LessPing.LOGGER.error("[LessPing] UDP ソケットを開けません: {}", e.toString());
+            return;
+        }
+        pollSignal(true);
+    }
+
+    /**
+     * サーバーリスト ping 経由でシグナリングする（ ioPool のスレッドで実行）。
+     * 中継プラグインが持つホスト端末の候補アドレスを取得して穴あけを始める。
+     */
+    private void pollSignal(boolean urgent) {
+        if (!started || stopped || config == null || config.hostMode) {
+            return;
+        }
+        String server = config.signalServer;
+        if (server == null || server.isBlank() || config.hostPlayer == null
+                || config.hostPlayer.isBlank()) {
+            return;
+        }
+        if (!signalBusy.compareAndSet(false, true)) {
+            return; // すでに実行中
+        }
+        ioPool.execute(() -> {
+            try {
+                List<InetSocketAddress> candidates =
+                        SignalClient.fetchCandidates(server, config.secret);
+                if (candidates.isEmpty()) {
+                    if (urgent) {
+                        LessPing.LOGGER.info("[LessPing] {} からホストのエンドポイントを取得できませんでした"
+                                + "（プラグイン未導入 or 応答なし）", server);
+                    }
+                    return;
+                }
+                LessPing.LOGGER.info("[LessPing] サーバーからホスト ({}) のエンドポイントを受信: {}"
+                        + "（穴あけ開始）", config.hostPlayer, candidates);
+                punchPeer(config.hostPlayer, candidates, true);
+            } finally {
+                signalBusy.set(false);
+            }
+        });
+    }
 
     /** Minecraft のサーバー参加時に呼ぶ（HELLO の送信とトンネル開始） */
     public void onServerJoin(String playerName) {
@@ -294,22 +368,204 @@ public final class TunnelManager {
         while (!stopped) {
             try {
                 Socket socket = localTcp.accept();
-                Peer host = peers.get(config.hostPlayer == null ? "" : config.hostPlayer.toLowerCase());
-                if (host == null || !host.ready()) {
-                    LessPing.LOGGER.warn("[LessPing] トンネルが確立していないため接続を拒否しました");
-                    socket.close();
-                    continue;
-                }
-                int conv = random.nextInt();
-                LpxStream stream = new LpxStream(conv, host.working, this::sendFrame, config.keepaliveMs);
-                conns.put(conv, new Conn(stream, socket));
-                LessPing.LOGGER.info("[LessPing] 接続を開始 conv={} → {}", conv, host.working);
-                splice(stream, socket);
+                ioPool.execute(() -> handleClient(socket));
             } catch (IOException e) {
                 if (!stopped) {
                     LessPing.LOGGER.debug("[LessPing] accept エラー: {}", e.toString());
                 }
             }
+        }
+    }
+
+    /**
+     * ローカル受け口に来た接続（= Minecraft が「narena」へ繋ごうとした）を処理する。
+     *
+     * <p>トンネルがまだ無い場合は、その場でシグナリングして最大 10 秒待つ。
+     * それでも張れなければ {@code signalServer}（本サーバー）へ素通しして
+     * 通常接続として続行する（「narena」が繋がらなくなることは無い）。
+     */
+    private void handleClient(Socket socket) {
+        try {
+            socket.setTcpNoDelay(true);
+        } catch (Exception ignored) {
+            // SO_NODELAY はベストエフォート
+        }
+        Peer host = hostPeer();
+        if (host == null || !host.ready()) {
+            LessPing.LOGGER.info("[LessPing] トンネル準備中… シグナリングして最大 10 秒待ちます");
+            pollSignal(true);
+            long deadline = System.currentTimeMillis() + 10_000;
+            while ((host = hostPeer()) == null || !host.ready()) {
+                if (stopped || System.currentTimeMillis() >= deadline) {
+                    host = null;
+                    break;
+                }
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        if (stopped) {
+            closeQuietly(socket);
+            return;
+        }
+        if (host != null && host.ready()) {
+            int conv = random.nextInt();
+            LpxStream stream = new LpxStream(conv, host.working, this::sendFrame, config.keepaliveMs);
+            conns.put(conv, new Conn(stream, socket));
+            LessPing.LOGGER.info("[LessPing] 接続を開始 conv={} → {}", conv, host.working);
+            splice(stream, socket);
+            return;
+        }
+        if (config.signalServer != null && !config.signalServer.isBlank()) {
+            LessPing.LOGGER.warn("[LessPing] トンネルを張れませんでした。通常経路 ({}) へ接続します",
+                    config.signalServer);
+            fallbackSplice(socket, config.signalServer);
+            return;
+        }
+        LessPing.LOGGER.warn("[LessPing] トンネルが確立していないため接続を拒否しました");
+        closeQuietly(socket);
+    }
+
+    private Peer hostPeer() {
+        return peers.get(config.hostPlayer == null ? "" : config.hostPlayer.toLowerCase());
+    }
+
+    /**
+     * 通常経路へのフォールバック: クライアント ⇄ 本サーバーを素通しする。
+     * 最初のハンドシェイクの hostname（"narena"）は本サーバーのアドレスに
+     * 書き換えてから流す（リバースプロキシが hostname でルーティングする場合のため）。
+     */
+    private void fallbackSplice(Socket client, String server) {
+        String[] hp = LpConfig.parseAddress(server, 25565);
+        Socket upstream = null;
+        try {
+            upstream = new Socket();
+            upstream.setTcpNoDelay(true);
+            upstream.connect(new InetSocketAddress(hp[0], Integer.parseInt(hp[1])), 5000);
+            rewriteHandshakeHost(client, upstream, hp[0], Integer.parseInt(hp[1]));
+            spliceTcp(client, upstream);
+        } catch (Exception e) {
+            LessPing.LOGGER.warn("[LessPing] 通常経路へのフォールバックに失敗: {}", e.toString());
+            closeQuietly(client);
+            closeQuietly(upstream);
+        }
+    }
+
+    /** クライアントが送った最初のパケット（Handshake）の hostname を書き換える */
+    private void rewriteHandshakeHost(Socket client, Socket upstream, String newHost, int newPort)
+            throws Exception {
+        InputStream in = client.getInputStream();
+        OutputStream out = upstream.getOutputStream();
+        int len = readVarint(in);
+        byte[] packet = new byte[len];
+        int read = 0;
+        while (read < len) {
+            int n = in.read(packet, read, len - read);
+            if (n < 0) {
+                throw new IllegalStateException("ハンドシェイクの途中で切れました");
+            }
+            read += n;
+        }
+        // Handshake: varint id, varint protocol, string host, ushort port, varint state
+        int[] pos = {0};
+        int id = readVarint(packet, pos);
+        if (id != 0x00) {
+            // ハンドシェイクでなければそのまま流す
+            writeVarint(out, len);
+            out.write(packet);
+            return;
+        }
+        readVarint(packet, pos); // protocol
+        int hostLen = readVarint(packet, pos);
+        pos[0] += hostLen; // 元の hostname を読み飛ばす
+        pos[0] += 2;       // port
+        int state = readVarint(packet, pos);
+        int restLen = len - pos[0];
+
+        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+        writeVarint(buf, id);
+        writeVarint(buf, SharedConstants.getProtocolVersion());
+        byte[] hostBytes = newHost.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        writeVarint(buf, hostBytes.length);
+        buf.write(hostBytes);
+        buf.write((newPort >>> 8) & 0xFF);
+        buf.write(newPort & 0xFF);
+        writeVarint(buf, state);
+        buf.write(packet, len - restLen, restLen);
+        byte[] rewritten = buf.toByteArray();
+        writeVarint(out, rewritten.length);
+        out.write(rewritten);
+        out.flush();
+    }
+
+    /** TCP ⇄ TCP の双方向ポンプ（フォールバック用） */
+    private void spliceTcp(Socket a, Socket b) {
+        ioPool.execute(() -> pump(a, b));
+        ioPool.execute(() -> pump(b, a));
+    }
+
+    private void pump(Socket from, Socket to) {
+        byte[] buf = new byte[16384];
+        try (Socket ignored = from) {
+            InputStream in = from.getInputStream();
+            OutputStream out = to.getOutputStream();
+            int n;
+            while ((n = in.read(buf)) >= 0) {
+                if (n > 0) {
+                    out.write(buf, 0, n);
+                    out.flush();
+                }
+            }
+        } catch (Exception ignored) {
+            // 切断
+        } finally {
+            closeQuietly(to);
+        }
+    }
+
+    private static int readVarint(InputStream in) throws Exception {
+        int value = 0;
+        int position = 0;
+        while (position < 5) {
+            int b = in.read();
+            if (b < 0) {
+                throw new IllegalStateException("接続が切れました");
+            }
+            value |= (b & 0x7F) << position;
+            if ((b & 0x80) == 0) {
+                return value;
+            }
+            position += 7;
+        }
+        throw new IllegalStateException("varint が長すぎます");
+    }
+
+    private static int readVarint(byte[] buf, int[] pos) {
+        int value = 0;
+        int position = 0;
+        while (position < 5 && pos[0] < buf.length) {
+            int b = buf[pos[0]++];
+            value |= (b & 0x7F) << position;
+            if ((b & 0x80) == 0) {
+                return value;
+            }
+            position += 7;
+        }
+        return value;
+    }
+
+    private static void writeVarint(OutputStream out, int value) throws Exception {
+        while (true) {
+            if ((value & ~0x7F) == 0) {
+                out.write(value);
+                return;
+            }
+            out.write((value & 0x7F) | 0x80);
+            value >>>= 7;
         }
     }
 
@@ -537,8 +793,8 @@ public final class TunnelManager {
             return;
         }
         peer.punchTries++;
+        long token = LpSecret.punchToken(config.secret == null ? "" : config.secret);
         for (InetSocketAddress candidate : peer.candidates) {
-            long token = random.nextLong();
             punchTokens.put(token, new PunchTarget(peer.name, candidate, System.currentTimeMillis()));
             peer.pendingTokens.put(candidate, token);
             send(LpxFrame.token(LpxFrame.T_PUNCH, 0, token), candidate);
@@ -578,6 +834,16 @@ public final class TunnelManager {
         }
         // 古い knownAddrs の掃除
         knownAddrs.entrySet().removeIf(e -> now - e.getValue() > KNOWN_ADDR_TTL_MS * 2);
+        // サーバーリスト ping 経由のシグナリング（ホストへのトンネルが無い間だけ定期実行）
+        if (!config.hostMode && config.signalServer != null && !config.signalServer.isBlank()
+                && config.hostPlayer != null && !config.hostPlayer.isBlank()) {
+            Peer host = peers.get(config.hostPlayer.toLowerCase());
+            if ((host == null || !host.ready())
+                    && now - lastSignalPollAt > Math.max(3000, config.signalPollMs)) {
+                lastSignalPollAt = now;
+                pollSignal(false);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ STUN

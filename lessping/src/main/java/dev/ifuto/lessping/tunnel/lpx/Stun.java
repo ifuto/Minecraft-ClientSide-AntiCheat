@@ -1,4 +1,4 @@
-package dev.ifuto.lessping.tunnel;
+package dev.ifuto.lessping.tunnel.lpx;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;

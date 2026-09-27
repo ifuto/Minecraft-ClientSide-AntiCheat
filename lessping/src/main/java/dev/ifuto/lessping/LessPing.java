@@ -26,7 +26,7 @@ import org.slf4j.LoggerFactory;
 public final class LessPing implements ClientModInitializer {
 
     /** gradle.properties の lessping_version と合わせる */
-    public static final String VERSION = "0.1.3";
+    public static final String VERSION = "0.2.0";
 
     public static final Logger LOGGER = LoggerFactory.getLogger("lessping");
 
@@ -45,6 +45,10 @@ public final class LessPing implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(EventsPayload.ID, (payload, context) ->
                 context.client().execute(() ->
                         TunnelManager.get().onIntro(payload.player(), payload.data())));
+
+        // クライアント起動直後（ゲーム内に入っていなくても）シグナリングを開始する。
+        // これで「narena」と打つだけでトンネル接続できる（本サーバーに入る必要がない）
+        ClientLifecycleEvents.CLIENT_STARTED.register(client -> TunnelManager.get().clientStarted());
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
                 client.execute(() -> TunnelManager.get().onServerJoin(client.getSession().getUsername())));
