@@ -224,7 +224,7 @@ public final class TunnelManager {
         ioPool.execute(() -> {
             try {
                 List<InetSocketAddress> candidates =
-                        SignalClient.fetchCandidates(server, config.secret);
+                        SignalClient.fetchCandidates(server, config.secret, config.wsUrl);
                 if (candidates.isEmpty()) {
                     if (urgent) {
                         LessPing.LOGGER.info("[LessPing] {} からホストのエンドポイントを取得できませんでした"
@@ -391,10 +391,12 @@ public final class TunnelManager {
             // SO_NODELAY はベストエフォート
         }
         Peer host = hostPeer();
+        boolean wsReady = config.wsUrl != null && !config.wsUrl.isBlank();
         if (host == null || !host.ready()) {
-            LessPing.LOGGER.info("[LessPing] トンネル準備中… シグナリングして最大 10 秒待ちます");
+            LessPing.LOGGER.info("[LessPing] トンネル準備中… シグナリングして最大 {} 秒待ちます",
+                    wsReady ? 5 : 10);
             pollSignal(true);
-            long deadline = System.currentTimeMillis() + 10_000;
+            long deadline = System.currentTimeMillis() + (wsReady ? 5_000L : 10_000L);
             while ((host = hostPeer()) == null || !host.ready()) {
                 if (stopped || System.currentTimeMillis() >= deadline) {
                     host = null;
@@ -420,6 +422,19 @@ public final class TunnelManager {
             splice(stream, socket);
             return;
         }
+        // フォールバック 1: WebSocket 経由（Cloudflare Tunnel 等。IP を公開しない経路）
+        if (wsReady) {
+            try {
+                WsLink.WsConnection ws = WsLink.WsConnection.connect(config.wsUrl, 7000);
+                LessPing.LOGGER.info("[LessPing] トンネル未確立のため WebSocket 経由 ({}) で接続します",
+                        config.wsUrl);
+                spliceWs(socket, ws);
+                return;
+            } catch (Exception e) {
+                LessPing.LOGGER.debug("[LessPing] WebSocket 接続に失敗: {}", e.toString());
+            }
+        }
+        // フォールバック 2: signalServer（本サーバー）へ素通し
         if (config.signalServer != null && !config.signalServer.isBlank()) {
             LessPing.LOGGER.warn("[LessPing] トンネルを張れませんでした。通常経路 ({}) へ接続します",
                     config.signalServer);
@@ -428,6 +443,46 @@ public final class TunnelManager {
         }
         LessPing.LOGGER.warn("[LessPing] トンネルが確立していないため接続を拒否しました");
         closeQuietly(socket);
+    }
+
+    /** クライアントの TCP ⇄ WebSocket の双方向ポンプ（CF 経由フォールバック用） */
+    private void spliceWs(Socket client, WsLink.WsConnection ws) {
+        ioPool.execute(() -> {
+            byte[] buf = new byte[16384];
+            try (Socket ignored = client) {
+                InputStream in = client.getInputStream();
+                OutputStream out = ws.out();
+                int n;
+                while ((n = in.read(buf)) >= 0) {
+                    if (n > 0) {
+                        out.write(buf, 0, n);
+                        out.flush();
+                    }
+                }
+            } catch (Exception ignored) {
+                // 切断
+            } finally {
+                ws.close();
+            }
+        });
+        ioPool.execute(() -> {
+            byte[] buf = new byte[16384];
+            try (Socket ignored = client) {
+                InputStream in = ws.in();
+                OutputStream out = client.getOutputStream();
+                int n;
+                while ((n = in.read(buf)) >= 0) {
+                    if (n > 0) {
+                        out.write(buf, 0, n);
+                        out.flush();
+                    }
+                }
+            } catch (Exception ignored) {
+                // 切断
+            } finally {
+                ws.close();
+            }
+        });
     }
 
     private Peer hostPeer() {

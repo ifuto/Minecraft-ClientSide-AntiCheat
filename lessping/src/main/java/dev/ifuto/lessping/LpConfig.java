@@ -54,6 +54,18 @@ public final class LpConfig {
     /** サーバー側 host-endpoint.secret と揃える共有鍵（空なら無認証） */
     public String secret = "";
 
+    /**
+     * WebSocket 経由の URL（Cloudflare Tunnel 等。例: "wss://narena.dpdns.org"）。
+     * 設定されていると:
+     * <ul>
+     *   <li>シグナリング（status ping）をこの経路で行う（優先）</li>
+     *   <li>P2P トンネルを張れないとき、この経路で通常接続を続行する
+     *       （サーバーPC の IP を公開しないフォールバック）</li>
+     * </ul>
+     * 空文字なら無効（直接 TCP のみ）
+     */
+    public String wsUrl = "wss://narena.dpdns.org";
+
     /** 自分のアドレス (ip:port) を調べる STUN サーバー */
     public List<String> stunServers = new ArrayList<>(List.of(
             "stun.cloudflare.com:3478",

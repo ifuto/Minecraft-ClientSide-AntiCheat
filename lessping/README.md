@@ -16,7 +16,9 @@ v0.2 から **参加者は「narena」だけ打てばよく、先に本サーバ
 また **サーバー主はゲームを起動していなくても OK**（ホスト側のトンネル端末は
 **Velocity プラグイン**自身が務めます）。v0.2.1 で Paper プラグインから
 **Velocity プラグイン**に移行し、SMP / PvP のどちらのサーバーにいるプレイヤーにも
-対応しました。
+対応しました。v0.3.0 で **Cloudflare Tunnel と組む IP 非公開モード**（WebSocket
+ブリッジ）が入りました。**直結（最速）→ Cloudflare 経由（IP 非公開）→ Minekube** の
+順に自動フォールバックします。
 
 ## 構成要素
 
@@ -46,8 +48,9 @@ MC 1.21.11 / Fabric（MOD）/ **Velocity 4.x（Java 25）**（プラグイン）
    トンネルは 25565 と同じ入り口（プロキシ直下）なので **`/server` での SMP⇔PvP 移動も
    そのまま使える**（バックエンド間はローカルなので追加遅延なし）
    - サーバーリストの ping 表示もトンネル経由（実際の直結 RTT が表示される）
-   - まだトンネルが張れていないときは最大 10 秒待って、それでもダメなら
-     **自動的に通常経路（本サーバー経由）へ接続**。「narena」が繋がらなくなることは無い
+   - まだトンネルが張れていないときは数秒待って、それでもダメなら順にフォールバック:
+     **① WebSocket 経由（`wsUrl`、Cloudflare Tunnel。IP 非公開）→ ② 本サーバー（Minekube）
+     へ素通し**。「narena」が繋がらなくなることは無い
 6. （従来のゲーム内経路も並行して動く: 両者が本サーバーに入っていれば
    HELLO/INTRO でも紹介し合う。SMP と PvP の**どちらにいても**プロキシが受け取る。
    どちらか先に確立した方が使われる）
@@ -87,6 +90,37 @@ CLOSE フレーム自体がロスしても keepalive 間隔で再送される。
    - `サーバーからホスト (...) のエンドポイントを受信` → 穴あけの様子もログに出る
 3. 通信はトンネル（直結）。失敗時は自動で通常経路に流れるので、繋がらないことはない
 
+## Cloudflare Tunnel と組む（IP 非公開モード・v0.3.0〜）
+
+P2P 直結は最速だが「繋いだ相手には自分の IP が見える」のは避けられない。
+Minekube をやめて**公開面を Cloudflare だけにする**と、サーバーPC の IP を
+誰にも知られずに運用できる（DDoS も Cloudflare が吸う。家のポートは全閉でよい）:
+
+```
+友達のMOD ──WSS(443)──▶ Cloudflare エッジ ──▶ cloudflared(家) ──▶ プラグ内蔵の
+WebSocket ブリッジ(:8081) ──▶ localhost の Velocity(25565) ──▶ SMP / PvP
+```
+
+### セットアップ
+
+1. **Cloudflare Zero Trust** → Tunnels → 対象のトンネルの Public hostname
+   （`narena.dpdns.org`）の**サービスを `http://localhost:8081` に変更**
+   （`tcp://localhost:25565` から変更。WebSocket は `http://` サービスで通る）
+2. Public hostname に **Access ポリシーを付けない**（メール認証があると MC は繋げない）
+3. プラグイン側は設定不要（`ws.enabled=true` が既定。`plugins/lessping-narena/config.properties`）
+4. 参加者の MOD も設定不要（`wsUrl` の既定が `wss://narena.dpdns.org`）
+5. 確認: ブラウザで `https://narena.dpdns.org/` を開いて
+   `LessPing-NArena WS bridge OK` と出れば疎通 OK。プロキシで `/lp` を打つと
+   `WSブリッジ: ws://127.0.0.1:8081 接続中 0/16` のように出る
+
+### 動作
+
+- **シグナリング（status ping）も `wsUrl` 経由を優先**するので、Minekube が無くても
+  「narena」だけで P2P 直結を張れる（`signalServer` は予備経路になる）
+- P2P 直結に失敗したら（対称 NAT など）自動で **WSS → Cloudflare → Velocity** に
+  繋ぐ。直結より +5〜15ms（CF 東京エッジ経由）だが、Minekube 経由より速い可能性が高い
+- Minekube と併存もできる（`wsUrl` を空にすれば従来動作）
+
 ## なぜ速くなるのか / ならない場合
 
 - Minekube 等のリレーが経路上にあった場合、その分の距離とホップが消える
@@ -116,7 +150,8 @@ CLOSE フレーム自体がロスしても keepalive 間隔で再送される。
 |------|------|------|
 | `enabled` | `true` | 無効にすると何もしない |
 | `magicNames` | `["narena"]` | この名前への接続をトンネルへ差し替える |
-| `signalServer` | `"n-arena.play.minekube.net"` | シグナリング用の本サーバーアドレス。ここに status ping を打つ |
+| `wsUrl` | `"wss://narena.dpdns.org"` | WebSocket 経由（Cloudflare Tunnel）。シグナリングとフォールバックに使う。空なら無効 |
+| `signalServer` | `"n-arena.play.minekube.net"` | シグナリング・フォールバックの予備経路（直接 TCP）。ここに status ping を打つ |
 | `signalPollMs` | `15000` | シグナリングのポーリング間隔（トンネル未確立時のみ） |
 | `hostPlayer` | `"Ifuto_mitai"` | ゲーム内 INTRO 経路で誰とのトンネルを張るか |
 | `secret` | `""` | サーバー側 `host-endpoint.secret` と揃える共有鍵 |
@@ -139,13 +174,16 @@ CLOSE フレーム自体がロスしても keepalive 間隔で再送される。
 | `host-endpoint.stun-interval-ms` | `30000` | STUN 更新間隔（NAT マップの維持） |
 | `host-endpoint.publish` | `true` | ping 応答に候補を載せるか（false でゲーム内 INTRO 経路のみ） |
 | `host-endpoint.max-connections` | `32` | 同時に受け付けるトンネル接続の上限 |
+| `ws.enabled` | `true` | WebSocket ブリッジ（Cloudflare Tunnel 用）を有効にする |
+| `ws.listen` | `127.0.0.1:8081` | WebSocket ブリッジの待受アドレス。cloudflared はここを向ける |
+| `ws.max-connections` | `16` | WebSocket 経由の同時接続上限 |
 | `debug` | `false` | シグナリングの詳細ログ |
 | `freshness-ms` | `600000` | ゲーム内 INTRO のエントリ鮮度 |
 
 ## コマンド（Velocity）
 
-- `/lessping`（`/lp`）— ホスト端末の状態（UDP ポート・公開アドレス・接続数・認証）と
-  登録済みプレイヤーを表示（権限 `lessping.admin`、コンソールでも可）
+- `/lessping`（`/lp`）— ホスト端末と WebSocket ブリッジの状態（UDP ポート・公開アドレス・
+  接続数・認証）と登録済みプレイヤーを表示（権限 `lessping.admin`、コンソールでも可）
 
 ## 開発
 
@@ -163,3 +201,5 @@ CLOSE フレーム自体がロスしても keepalive 間隔で再送される。
   アドレス解決を差し替える
 - `relay/TunnelHost.java` — サーバーPC 側のトンネル端末（STUN・PUNCH・LPX→backend）。
   Velocity API に依存しない純粋 Java
+- `tunnel/WsLink.java` / `relay/WsServer.java` — RFC 6455 を Java 標準ライブラリだけで
+  実装した WebSocket クライアント/サーバー（Cloudflare Tunnel 経由の IP 非公開モード用）

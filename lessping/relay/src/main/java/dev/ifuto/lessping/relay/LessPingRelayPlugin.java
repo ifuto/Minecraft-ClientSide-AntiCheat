@@ -58,14 +58,14 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 // 注意: version はリテラルで書くこと（定数参照はアノテーション処理中に
 // AnnotationTypeMismatchException になる）。リリース時は VERSION 定数と合わせる
-@Plugin(id = "lessping-narena", name = "LessPing-NArena", version = "0.2.2",
+@Plugin(id = "lessping-narena", name = "LessPing-NArena", version = "0.3.0",
         description = "LessPing-NArena のシグナリング中継 + ホスト側トンネル端末（P2P 直結）",
         url = "https://github.com/ifuto/Minecraft-ClientSide-AntiCheat",
         authors = {"ifuto"})
 public final class LessPingRelayPlugin {
 
     /** gradle.properties の lessping_version と合わせる */
-    public static final String VERSION = "0.2.2";
+    public static final String VERSION = "0.3.0";
 
     /** クライアント → プロキシ（HELLO / INTRO_REQUEST） */
     public static final MinecraftChannelIdentifier CHANNEL_IN =
@@ -84,6 +84,8 @@ public final class LessPingRelayPlugin {
 
     private Properties config = new Properties();
     private TunnelHost tunnelHost;
+    /** WebSocket ⇄ TCP ブリッジ（Cloudflare Tunnel 等の IP 非公開経路） */
+    private WsServer wsServer;
 
     /** 登録されたプレイヤー（小文字名 → 情報） */
     private final Map<String, PeerInfo> peers = new ConcurrentHashMap<>();
@@ -121,11 +123,30 @@ public final class LessPingRelayPlugin {
                 tunnelHost = null;
             }
         }
+        if (getBool("ws.enabled", true)) {
+            try {
+                String[] backend = backendTarget();
+                String listen = getString("ws.listen", "127.0.0.1:8081");
+                String[] lp = listen.split(":");
+                wsServer = new WsServer(logger, new WsServer.Settings(
+                        lp[0], Integer.parseInt(lp[lp.length - 1]),
+                        (int) getLong("ws.max-connections", 16),
+                        backend[0], Integer.parseInt(backend[1]), VERSION));
+                wsServer.start();
+            } catch (Exception e) {
+                logger.error("WebSocket ブリッジを開始できません: {}", e.toString());
+                wsServer = null;
+            }
+        }
         logger.info("LessPing-NArena 中継を開始（{}）。ゲーム通信は経由しません（P2P）。", VERSION);
     }
 
     @Subscribe
     public void onProxyShutdown(ProxyShutdownEvent event) {
+        if (wsServer != null) {
+            wsServer.stop();
+            wsServer = null;
+        }
         if (tunnelHost != null) {
             tunnelHost.stop();
             tunnelHost = null;
@@ -158,23 +179,29 @@ public final class LessPingRelayPlugin {
         }
     }
 
+    /**
+     * トンネル / WebSocket ブリッジの転送先（既定 = このプロキシ自身。
+     * SMP / PvP どちらにも /server で行ける）。{host, port} を返す
+     */
+    private String[] backendTarget() {
+        String backend = getString("host-endpoint.backend", "");
+        if (backend == null || backend.isBlank()) {
+            InetSocketAddress bound = proxy.getBoundAddress();
+            String host = bound.getHostString();
+            if (host == null || host.isBlank() || host.equals("0.0.0.0") || host.equals("::")) {
+                host = "127.0.0.1";
+            }
+            return new String[]{host, String.valueOf(bound.getPort())};
+        }
+        String[] hp = backend.split(":");
+        return new String[]{hp[0].isBlank() ? "127.0.0.1" : hp[0], hp[hp.length - 1]};
+    }
+
     /** config.properties + プロキシの状態からホスト端末の設定を組み立てる */
     private TunnelHost.Settings buildSettings() {
-        String backend = getString("host-endpoint.backend", "");
-        String backendHost;
-        int backendPort;
-        if (backend == null || backend.isBlank()) {
-            // 指定がなければプロキシ自身（= SMP / PvP どちらにも /server で行ける）
-            InetSocketAddress bound = proxy.getBoundAddress();
-            backendPort = bound.getPort();
-            String host = bound.getHostString();
-            backendHost = (host == null || host.isBlank() || host.equals("0.0.0.0") || host.equals("::"))
-                    ? "127.0.0.1" : host;
-        } else {
-            String[] hp = backend.split(":");
-            backendHost = hp[0].isBlank() ? "127.0.0.1" : hp[0];
-            backendPort = Integer.parseInt(hp[hp.length - 1]);
-        }
+        String[] backend = backendTarget();
+        String backendHost = backend[0];
+        int backendPort = Integer.parseInt(backend[1]);
         List<String> stun = getList("host-endpoint.stun-servers",
                 List.of("stun.cloudflare.com:3478", "stun.l.google.com:19302"));
         return new TunnelHost.Settings(
@@ -351,6 +378,9 @@ public final class LessPingRelayPlugin {
             source.sendMessage(Component.text("[LessPing-NArena] 中継 v" + VERSION, NamedTextColor.GOLD));
             source.sendMessage(Component.text(
                     "ホスト端末: " + (tunnelHost == null ? "無効" : tunnelHost.describe()),
+                    NamedTextColor.GRAY));
+            source.sendMessage(Component.text(
+                    "WSブリッジ: " + (wsServer == null ? "無効" : wsServer.describe()),
                     NamedTextColor.GRAY));
             List<String> names = peers.values().stream().map(PeerInfo::name).sorted().toList();
             source.sendMessage(Component.text(
