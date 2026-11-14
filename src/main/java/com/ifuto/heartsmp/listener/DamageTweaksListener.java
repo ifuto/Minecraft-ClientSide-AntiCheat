@@ -9,7 +9,6 @@ import org.bukkit.damage.DamageSource;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.MinecartTNT;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
@@ -49,7 +48,7 @@ public final class DamageTweaksListener implements Listener {
                 && event.getCause() != EntityDamageEvent.DamageCause.BLOCK_EXPLOSION) {
             return;
         }
-        if (!(directEntity(event) instanceof MinecartTNT)) {
+        if (!isTntMinecart(directEntity(event))) {
             return;
         }
         event.setDamage(event.getDamage() * plugin.settings().tntMinecartMultiplier);
@@ -71,12 +70,24 @@ public final class DamageTweaksListener implements Listener {
         } catch (RuntimeException ignored) {
             // フォールバックへ
         }
+        Entity nearest = null;
+        double best = Double.MAX_VALUE;
         for (Entity nearby : event.getEntity().getNearbyEntities(6.0D, 6.0D, 6.0D)) {
-            if (nearby instanceof MinecartTNT) {
-                return nearby;
+            if (!isTntMinecart(nearby)) {
+                continue;
+            }
+            double distance = nearby.getLocation().distanceSquared(event.getEntity().getLocation());
+            if (distance < best) {
+                best = distance;
+                nearest = nearby;
             }
         }
-        return null;
+        return nearest;
+    }
+
+    /** TNT トロッコかどうか (エンティティクラスの移動に依存しない判定)。 */
+    private boolean isTntMinecart(Entity entity) {
+        return entity != null && "TNT_MINECART".equals(entity.getType().name());
     }
 
     // ------------------------------------------------------------------
