@@ -136,4 +136,42 @@ class ConfigAndLogicTest {
         assertEquals(null, copy.killer());
         assertEquals(DeathRecord.Type.COMBAT_LOGOUT, copy.type());
     }
+
+    @Test
+    void harnessProbe() {
+        throw new IllegalStateException("HARNESS_PROBE: テストが実行されているかの確認用 (この行は次のコミットで削除)");
+    }
+
+    @Test
+    void obfuscatedNameIsObfuscated() {
+        net.kyori.adventure.text.Component hidden = Msg.parse("<obfuscated>aaaaaa");
+        String plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                .serialize(hidden);
+        assertEquals("aaaaaa", plain);
+        assertTrue(hidden.decoration(net.kyori.adventure.text.format.TextDecoration.OBFUSCATED),
+                "難読化が付いていません");
+    }
+
+    @Test
+    void clickableButtonsWork() {
+        net.kyori.adventure.text.Component cancel = Msg.parse("<#ff6f4d>[CANCEL]")
+                .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/tpacancel Steve"));
+        assertEquals("[CANCEL]", net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                .plainText().serialize(cancel));
+        assertNotNull(cancel.clickEvent());
+        assertEquals(net.kyori.adventure.text.event.ClickEvent.Action.RUN_COMMAND, cancel.clickEvent().action());
+    }
+
+    @Test
+    void hiddenNamePlaceholderKeepsObfuscation() {
+        java.util.Map<String, net.kyori.adventure.text.Component> placeholders = new java.util.LinkedHashMap<>();
+        placeholders.put("JoinPlayer_Name", Msg.parse("<obfuscated>aaaaaa"));
+        net.kyori.adventure.text.Component message = Msg.build(
+                "<#C6C6C6>[<#7aff59>+<#C6C6C6>] <#ffffff>%JoinPlayer_Name%", placeholders);
+        String plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                .serialize(message);
+        assertTrue(plain.contains("aaaaaa"), plain);
+        assertTrue(!plain.contains("%"), plain);
+        assertTrue(plain.contains("+"), plain);
+    }
 }
