@@ -148,7 +148,8 @@ class ConfigAndLogicTest {
         String plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
                 .serialize(hidden);
         assertEquals("aaaaaa", plain);
-        assertTrue(hidden.decoration(net.kyori.adventure.text.format.TextDecoration.OBFUSCATED),
+        assertEquals(net.kyori.adventure.text.format.TextDecoration.State.TRUE,
+                hidden.decoration(net.kyori.adventure.text.format.TextDecoration.OBFUSCATED),
                 "難読化が付いていません");
     }
 
