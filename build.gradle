@@ -18,6 +18,10 @@ repositories {
 
 dependencies {
     compileOnly "io.papermc.paper:paper-api:${paperApiVersion}"
+
+    testImplementation "io.papermc.paper:paper-api:${paperApiVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter:5.11.3"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
 java {
@@ -40,6 +44,15 @@ processResources {
     filteringCharset = 'UTF-8'
     filesMatching(['plugin.yml', 'paper-plugin.yml']) {
         expand(props)
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'failed'
+        exceptionFormat = 'full'
+        showStandardStreams = true
     }
 }
 
