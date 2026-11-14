@@ -138,11 +138,6 @@ class ConfigAndLogicTest {
     }
 
     @Test
-    void harnessProbe() {
-        throw new IllegalStateException("HARNESS_PROBE: テストが実行されているかの確認用 (この行は次のコミットで削除)");
-    }
-
-    @Test
     void obfuscatedNameIsObfuscated() {
         net.kyori.adventure.text.Component hidden = Msg.parse("<obfuscated>aaaaaa");
         String plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()

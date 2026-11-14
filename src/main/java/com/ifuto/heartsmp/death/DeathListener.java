@@ -17,6 +17,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -99,6 +100,21 @@ public final class DeathListener implements Listener {
             ExpUtil.setTotal(player, snapshot.experience());
             plugin.hearts().apply(player);
         });
+    }
+
+    /**
+     * 死亡画面のまま退出した場合でも Keep Inventory 分が消えないよう、
+     * 退出時にスナップショットを戻します (サーバーのプレイヤーデータ保存より前)。
+     */
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onQuit(PlayerQuitEvent event) {
+        Snapshot snapshot = pendingRestore.remove(event.getPlayer().getUniqueId());
+        if (snapshot == null) {
+            return;
+        }
+        Player player = event.getPlayer();
+        player.getInventory().setContents(snapshot.contents());
+        ExpUtil.setTotal(player, snapshot.experience());
     }
 
     // ------------------------------------------------------------------

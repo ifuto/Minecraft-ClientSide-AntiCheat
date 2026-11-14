@@ -134,8 +134,9 @@ public final class RtpManager {
 
     private Location findSurface(World world, String biomeKey) {
         long budget = System.currentTimeMillis() + 200L;
-        int min = plugin.settings().rtpNormalMinRadius;
-        int max = Math.max(min + 1, plugin.settings().rtpNormalMaxRadius);
+        int[] radius = searchRadius(world);
+        int min = radius[0];
+        int max = radius[1];
         for (int attempt = 0; attempt < plugin.settings().rtpMaxAttempts; attempt++) {
             if (System.currentTimeMillis() > budget) {
                 return null;
@@ -186,8 +187,9 @@ public final class RtpManager {
 
     private Location findCave(World world) {
         long budget = System.currentTimeMillis() + 200L;
-        int min = plugin.settings().rtpNormalMinRadius;
-        int max = Math.max(min + 1, plugin.settings().rtpNormalMaxRadius);
+        int[] radius = searchRadius(world);
+        int min = radius[0];
+        int max = radius[1];
         int minY = world.getMinHeight() + Math.max(8, plugin.settings().rtpCaveMinYOffset);
         int maxY = Math.min(plugin.settings().rtpCaveMaxY, world.getMaxHeight() - 20);
         if (maxY <= minY) {
@@ -235,6 +237,23 @@ public final class RtpManager {
             return new Location(world, x + 0.5D, y, z + 0.5D);
         }
         return null;
+    }
+
+    /** ワールドボーダーに収まるように探索半径をクランプします。 */
+    private int[] searchRadius(World world) {
+        int min = Math.max(8, plugin.settings().rtpNormalMinRadius);
+        int max = Math.max(min + 1, plugin.settings().rtpNormalMaxRadius);
+        double borderRadius = Math.max(32.0D, world.getWorldBorder().getSize() / 2.0D - 48.0D);
+        if (max > borderRadius) {
+            max = (int) Math.floor(borderRadius);
+        }
+        if (min >= max) {
+            min = Math.max(8, max / 3);
+        }
+        if (max <= min) {
+            max = min + 1;
+        }
+        return new int[]{min, max};
     }
 
     private boolean insideBorder(World world, int x, int z) {
