@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+build-log.txt
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+
+# 実行用サーバ
+server/
+run/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db

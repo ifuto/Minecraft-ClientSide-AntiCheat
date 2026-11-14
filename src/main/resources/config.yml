@@ -1,0 +1,275 @@
+# ============================================================
+#  HeartSMP
+#  Paper 1.21.x 用 SMP プラグイン
+#  ・ハート(最大体力)の受け渡し
+#  ・Combat タグ / ログアウト処理
+#  ・カスタムのキルログ・参加退出メッセージ
+#  ・TPA / いふと配送 / RTP / 運営コマンド
+#
+#  メッセージはすべて MiniMessage 記法です。
+#  色: <#ff0000> / <red> / <bold> / <obfuscated> など
+#  プレースホルダは %name% 形式です。
+# ============================================================
+
+settings:
+  combat:
+    # Combat が切れるまでの秒数
+    duration-seconds: 30
+    # アクションバーを更新する間隔(tick)
+    actionbar-interval-ticks: 10
+  hearts:
+    default: 10
+    min: 1
+    max: 30
+  death:
+    # Combat 中にログアウトしたときにアイテムを散らばせる半径(ブロック)
+    logout-scatter-radius: 4.0
+    # プレイヤーが死亡したときのドロップ品を追跡するためのタグ
+    track-drops: true
+  damage:
+    # TNT トロッコのダメージ倍率(80%)
+    tnt-minecart-multiplier: 0.8
+    # メイスの防具貫通(Breach)を 1 レベルごとに何割減らすか
+    # バニラは 1 レベル 15% 貫通 -> 本プラグインでは 1 レベル 11% 貫通
+    mace-breach-reduction-per-level: 0.04
+  tpa:
+    request-lifetime-seconds: 50
+    resend-cooldown-seconds: 30
+    post-teleport-cooldown-seconds: 300
+    abort-cooldown-seconds: 15
+    countdown-seconds: 3
+    # カウントダウン中にこれ以上動いたら中止(ブロック)
+    move-threshold: 0.3
+  delivery:
+    base-cost: 3
+    fast-cost: 6
+    travel-seconds: 120
+    max-pending-per-sender: 3
+    max-bagages: 21
+    # 配送規約違反で送れないアイテム
+    banned-materials:
+      - FLINT
+      - FLINT_AND_STEEL
+      - TNT
+      - FIREWORK_ROCKET
+      - END_CRYSTAL
+      - GUNPOWDER
+      - LIGHTNING_ROD
+      - OMINOUS_BOTTLE
+  rtp:
+    normal-cooldown-seconds: 40
+    cave-cooldown-seconds: 300
+    biome-cooldown-seconds: 180
+    # 探索する最大試行回数
+    max-attempts: 60
+    normal-min-radius: 300
+    normal-max-radius: 3000
+    cave-min-y-offset: 0
+    cave-max-y: 40
+  rollback:
+    # 1 プレイヤーあたり保存する死亡ログの最大件数
+    max-records-per-player: 40
+
+# ------------------------------------------------------------
+# ランク
+# ------------------------------------------------------------
+ranks:
+  default:
+    display: DEFAULT
+    name-color: '<#ffffff>'
+  vip:
+    display: VIP
+    name-color: '<#7aff59>'
+  vip-plus:
+    display: 'VIP+'
+    name-color: '<#ffd24d>'
+
+# ------------------------------------------------------------
+# メッセージ
+# ------------------------------------------------------------
+messages:
+  prefix: '<#7aff59>HeartSMP<#C6C6C6> » '
+  no-permission: '<#eb4034>You do not have permission to do that.'
+  player-not-found: '<#eb4034>プレイヤー %player% が見つかりません。'
+  player-only: '<#eb4034>このコマンドはプレイヤーのみ実行できます。'
+  unknown-player-online: '<#eb4034>%player% はオンラインではありません。'
+  hidden-name: '<obfuscated>aaaaaa'
+
+  join: '<#C6C6C6>[<#7aff59>+<#C6C6C6>] <#ffffff>%JoinPlayer_Name%'
+  quit: '<#C6C6C6>[<#eb4034>-<#C6C6C6>] <#ffffff>%LeavePlayer_Name%'
+
+  kill-log: '<#ff6f4d>⚔️ <bold><name_color_kill>%Killer_Name%</bold> <#ffffff><bold>→</bold> <#00D6FF>💀  <name_color_death>%Death_Name% <#C6C6C6>for <#ffffff>%Item_Name%'
+  kill-log-custom-item: '"%Item_Name%"'
+  kill-log-no-item: '<#C6C6C6>素手'
+
+  combat-actionbar: '<#00D6FF>Combat<#C6C6C6>: <#9BEFFF>%seconds%s'
+  combat-logout: '<#eb4034>%player% <#C6C6C6>が Combat 中にログアウトしました。'
+
+  heart-lost: '<#eb4034>ハートが 1 つ減りました <#C6C6C6>(%hearts% ハート)'
+  heart-gained: '<#7aff59>ハートが 1 つ増えました <#C6C6C6>(%hearts% ハート)'
+  heart-min: '<#eb4034>これ以上ハートを失うことはできません。'
+  heart-max: '<#C6C6C6>%player% はハートの上限に達しています。'
+  heart-star-name: '<#eb4034>Heart'
+  heart-star-lore:
+    - '<#C6C6C6>Combat 中に倒れたプレイヤーのハートの欠片'
+    - '<#C6C6C6>右クリックで <#eb4034>ハート +1'
+  heart-star-consumed: '<#7aff59>ハートが 1 つ増えました <#C6C6C6>(%hearts% ハート)'
+  heart-star-max: '<#eb4034>ハートが上限に達しているため使用できません。'
+
+  tpa-sent: '<#ffffff>→ <#C6C6C6>You sent TPA Request to <#ffffff>%player%'
+  tpa-sent-here: '<#ffffff>→ <#C6C6C6>You sent TPA Here Request to <#ffffff>%player%'
+  tpa-sent-cancel-button: '<#ff6f4d>[CANCEL]'
+  tpa-received: '<#ffffff>✉️ <#C6C6C6>You receive TPA Request from <#ffffff>%player%'
+  tpa-received-here: '<#ffffff>✉️ <#C6C6C6>You receive TPA Here Request from <#ffffff>%player%'
+  tpa-accept-button: '<#25ffa5>[ACCEPT]'
+  tpa-deny-button: '<#ff6f4d>[DENY]'
+  tpa-extended: '<#C6C6C6>リクエストの期限を <#ffffff>%seconds%<#C6C6C6>s 延長しました。'
+  tpa-cooldown: '<#eb4034>しばらく待ってください <#C6C6C6>(あと %seconds%s)'
+  tpa-self: '<#eb4034>自分自身にはリクエストを送れません。'
+  tpa-already-sent: '<#eb4034>すでに %player% にリクエストを送信しています。'
+  tpa-no-request: '<#eb4034>有効な TPA リクエストがありません。'
+  tpa-accepted: '<#25ffa5>TPA Accepted <#C6C6C6>- %seconds% 秒後にテレポートします。'
+  tpa-accepted-target: '<#25ffa5>TPA Accepted <#C6C6C6>- %player% が %seconds% 秒後にテレポートします。'
+  tpa-countdown: '<#9BEFFF>%seconds%<#C6C6C6>...'
+  tpa-teleported: '<#25ffa5>テレポートしました。'
+  tpa-aborted: '<#eb4034>TPA を中止しました <#C6C6C6>(移動を検出)'
+  tpa-denied: '<#eb4034>%player% が TPA リクエストを拒否しました。'
+  tpa-denied-target: '<#C6C6C6>%player% からの TPA リクエストを拒否しました。'
+  tpa-cancelled: '<#C6C6C6>%player% への TPA リクエストを取り消しました。'
+  tpa-expired-sender: '<#C6C6C6>%player% への TPA リクエストの期限が切れました。'
+  tpa-expired-target: '<#C6C6C6>%player% からの TPA リクエストの期限が切れました。'
+
+  delivery-title: '<#C6C6C6>いふと配送'
+  delivery-arrived-title: '<#C6C6C6>Bagages'
+  delivery-shulker-name: '<#9BEFFF><bold>いふと配送'
+  delivery-shulker-lore:
+    - '<#C6C6C6>送りたいアイテムを中央の枠に置いてください。'
+    - '<#C6C6C6>1 度に送れるのは 1 スタックまでです。'
+    - '<#C6C6C6>シュルカーボックスは送信できません。'
+  delivery-confirm-name: '<#7aff59><bold>✔ 発送する'
+  delivery-confirm-lore:
+    - '<#C6C6C6>クリックで発送します。'
+    - '<#C6C6C6>料金は左下のダイヤ枠から支払われます。'
+  delivery-diamond-name: '<#9BEFFF><bold>送料 <#ffffff>%cost% <#9BEFFF>ダイヤ'
+  delivery-diamond-lore:
+    - '<#C6C6C6>料金表'
+    - '<#C6C6C6>  通常配送: <#ffffff>%base% ダイヤ'
+    - '<#C6C6C6>  FastSend: <#ffffff>%fast% ダイヤ'
+    - ''
+    - '<#C6C6C6>必要な分のダイヤをこの枠に入れてください。'
+  delivery-diamond-deco-name: '<#9BEFFF><bold>ダイヤ'
+  delivery-fast-name: '<#9BEFFF><bold>FastSend <#ffffff>%state%'
+  delivery-fast-on: '<#7aff59>ON'
+  delivery-fast-off: '<#eb4034>OFF'
+  delivery-fast-lore:
+    - '<#C6C6C6>ON にすると発送した瞬間に届きます。'
+    - '<#C6C6C6>その代わり送料が <#ffffff>%fast% ダイヤ<#C6C6C6> になります。'
+    - ''
+    - '<#C6C6C6>現在: <#ffffff>%state%<#C6C6C6> / 送料: <#ffffff>%cost% ダイヤ'
+  delivery-fast-toggle-name: '<#9BEFFF><bold>FastSend 切り替え'
+  delivery-fast-toggle-lore:
+    - '<#C6C6C6>クリックで ON / OFF を切り替えます。'
+    - '<#C6C6C6>現在: <#ffffff>%state%'
+  delivery-bagages-lore: '<#C6C6C6>From <#ffffff>%player%'
+  delivery-inventory-full: '<#eb4034>インベントリに空きがありません。'
+  delivery-filler-name: ' '
+  delivery-sent: '<#ffffff><bold>✔</bold><#C6C6C6> The items are sent !'
+  delivery-arrive-line: '<#c6c6c6>- Your item will arrive in <#ffffff>%arrivetime%'
+  delivery-arrived: '<#ffffff>📦️ <#c6c6c6>Arrived items from <#ffffff>%player%'
+  delivery-arrived-hint: '<#c6c6c6>Check for <#ffffff>/bagages'
+  delivery-banned: '<#eb4034><bold>いふと配送 配送規約違反</bold><#C6C6C6> %item% は送信できません。'
+  delivery-no-item: '<#eb4034>送信するアイテムが設定されていません。'
+  delivery-not-enough-diamonds: '<#eb4034>送料のダイヤが足りません <#C6C6C6>(必要: %cost%)'
+  delivery-too-many-items: '<#eb4034>1 度に送信できるのは 1 スタックまでです。'
+  delivery-too-many-packages: '<#eb4034>同時に配送できるのは %max% 件までです。到着を待ってください。'
+  delivery-target-full: '<#eb4034>%player% の Bagages がいっぱいです。'
+  delivery-shulker-denied: '<#eb4034>シュルカーボックスは送信できません。'
+  delivery-take-only: '<#eb4034>Bagages にはアイテムを戻せません。'
+  delivery-empty-bagages: '<#C6C6C6>まだ届いているアイテムはありません。'
+  delivery-returned: '<#C6C6C6>発送を中止しました。アイテムは返却されました。'
+  delivery-arrive-time-format: '%minutes%m %seconds%s'
+
+  rtp-title: '<#C6C6C6>Random Teleport'
+  rtp-cave-name: '<#9BEFFF><bold>Cave RTP'
+  rtp-cave-lore:
+    - '<#C6C6C6>地下深くの洞窟へランダムテレポートします。'
+    - ''
+    - '<#C6C6C6>Cooldown: <#ffffff>%cooldown%'
+    - '<#C6C6C6>Unlock: <#ffffff>VIP'
+  rtp-normal-name: '<#7aff59><bold>Normal RTP'
+  rtp-normal-lore:
+    - '<#C6C6C6>オーバーワールドの地上へランダムテレポートします。'
+    - ''
+    - '<#C6C6C6>Cooldown: <#ffffff>%cooldown%'
+    - '<#C6C6C6>Unlock: <#ffffff>ALL'
+  rtp-biome-name: '<#ffd24d><bold>Biome-Select RTP'
+  rtp-biome-lore:
+    - '<#C6C6C6>バイオームを指定して地上へランダムテレポートします。'
+    - ''
+    - '<#C6C6C6>Cooldown: <#ffffff>%cooldown%'
+    - '<#C6C6C6>Unlock: <#ffffff>VIP+'
+  rtp-locked: '<#eb4034>この RTP は %rank% 以上で解放されます。'
+  rtp-cooldown: '<#eb4034>Cooldown 中です <#C6C6C6>(あと %seconds%s)'
+  rtp-searching: '<#C6C6C6>安全な場所を探索しています...'
+  rtp-success: '<#7aff59>テレポートしました <#C6C6C6>(%x%, %y%, %z%)'
+  rtp-failed: '<#eb4034>安全な場所が見つかりませんでした。もう一度お試しください。'
+  rtp-biome-title: '<#C6C6C6>バイオームを選択'
+  rtp-biome-button-lore:
+    - '<#C6C6C6>このバイオームへランダムテレポートします。'
+    - '<#C6C6C6>Cooldown: <#ffffff>%cooldown%'
+  rtp-biome-next-page: '<#9BEFFF><bold>次のページ »'
+  rtp-biome-prev-page: '<#9BEFFF><bold>« 前のページ'
+  rtp-biome-back: '<#C6C6C6><bold>« 戻る'
+
+  combat-gui-title: '<#C6C6C6>Combat Players'
+  combat-gui-empty: '<#C6C6C6>Combat 中のプレイヤーはいません。'
+  combat-gui-head-name: '<#ffffff>%player%'
+  combat-gui-head-lore:
+    - '<#C6C6C6>残り <#ffffff>%seconds%<#C6C6C6>s'
+    - '<#C6C6C6>クリックでスペクテイターとして移動します。'
+  combat-spectate: '<#C6C6C6>%player% の元へ移動しました。'
+  combat-spectate-back-button: '<#00D6FF>[<#9BEFFF>Back<#00D6FF>]'
+  combat-spectate-back-done: '<#C6C6C6>元の位置に戻りました。'
+  combat-spectate-no-session: '<#eb4034>戻る場所がありません。'
+
+  rollback-title: '<#C6C6C6>%player% の死亡ログ'
+  rollback-empty: '<#C6C6C6>該当するログがありません。'
+  rollback-record-name: '<#ff6f4d><bold>%killer%</bold> killed'
+  rollback-record-name-logout: '<#ff6f4d><bold>Combat Logout</bold>'
+  rollback-record-lore:
+    - '<#C6C6C6>死亡時刻: <#ffffff>%time%'
+    - '<#C6C6C6>死因: <#ffffff>%cause%'
+    - '<#C6C6C6>場所: <#ffffff>%location%'
+    - '<#C6C6C6>戦闘参加者: <#ffffff>%players%'
+    - '<#C6C6C6>ドロップ数: <#ffffff>%items%'
+    - ''
+    - '<#C6C6C6>クリックで当時のインベントリを表示'
+  rollback-detail-title: '<#C6C6C6>%player% - %killer% killed'
+  rollback-button: '<#7aff59><bold>RollBack'
+  rollback-button-lore:
+    - '<#C6C6C6>A さんのドロップ品をすべて回収して'
+    - '<#C6C6C6>死亡時の状態に戻します。'
+  rollback-button-xp: '<#7aff59><bold>RollBack + EXP'
+  rollback-button-xp-lore:
+    - '<#C6C6C6>RollBack に加えて当時の経験値も復元します。'
+    - '<#C6C6C6>対象 EXP: <#ffffff>%exp%'
+  rollback-undo-button: '<#ff6f4d><bold>Undo'
+  rollback-undo-button-lore:
+    - '<#C6C6C6>直前の RollBack を取り消します。'
+  rollback-close-button: '<#C6C6C6><bold>Close'
+  rollback-info-button: '<#9BEFFF><bold>Info'
+  rollback-info-lore:
+    - '<#C6C6C6>Victim: <#ffffff>%player%'
+    - '<#C6C6C6>Killer: <#ffffff>%killer%'
+    - '<#C6C6C6>時間: <#ffffff>%time%'
+    - '<#C6C6C6>アイテム: <#ffffff>%items%'
+    - '<#C6C6C6>EXP: <#ffffff>%exp%'
+  rollback-applied: '<#7aff59>RollBack を実行しました。<#C6C6C6> 回収: %found% 件 / 返却: %restored% 件 / 地面: %dropped% 件'
+  rollback-undone: '<#7aff59>RollBack を取り消しました。<#C6C6C6> 返却: %restored% 件'
+  rollback-nothing: '<#eb4034>回収できるアイテムが見つかりませんでした。'
+  rollback-no-undo: '<#eb4034>取り消せる RollBack がありません。'
+  rollback-received: '<#7aff59>運営があなたのドロップ品を返却しました。'
+  rollback-removed-notice: '<#eb4034>運営が RollBack を実行したため、あなたが所持していたドロップ品は削除されました。'
+
+  rank-set: '<#7aff59>%player% のランクを <#ffffff>%rank%<#7aff59> に変更しました。'
+  rank-invalid: '<#eb4034>ランクは default / VIP / VIP+ のいずれかです。'

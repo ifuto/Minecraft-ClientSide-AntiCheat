@@ -1,0 +1,59 @@
+plugins {
+    id 'java'
+}
+
+group = findProperty('plugin_group') ?: 'com.ifuto'
+version = findProperty('plugin_version') ?: '1.0.0'
+
+def mcVersion = findProperty('minecraft_version') ?: '1.21.11'
+def paperApiVersion = findProperty('paper_api_version') ?: "${mcVersion}-R0.1-SNAPSHOT"
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'papermc'
+        url = 'https://repo.papermc.io/repository/maven-public/'
+    }
+}
+
+dependencies {
+    compileOnly "io.papermc.paper:paper-api:${paperApiVersion}"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}
+
+processResources {
+    def props = [
+            version   : project.version,
+            apiVersion: (findProperty('plugin_api_version') ?: '1.21')
+    ]
+    inputs.properties(props)
+    filteringCharset = 'UTF-8'
+    filesMatching(['plugin.yml', 'paper-plugin.yml']) {
+        expand(props)
+    }
+}
+
+tasks.named('jar') {
+    archiveBaseName = 'HeartSMP'
+    manifest {
+        attributes(
+                'Implementation-Title': 'HeartSMP',
+                'Implementation-Version': project.version,
+                'Built-With-Paper-Api': paperApiVersion
+        )
+    }
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('jar')
+}

@@ -1,0 +1,75 @@
+name: HeartSMP
+version: '${version}'
+main: com.ifuto.heartsmp.HeartSMP
+api-version: '${apiVersion}'
+authors: [ifuto]
+description: Heart / Combat / TPA / Delivery / RTP suite for a Paper SMP
+website: https://github.com/ifuto
+folia-supported: false
+
+commands:
+  tpa:
+    description: Send a TPA request to another player
+    usage: /tpa <player>
+  tpahere:
+    description: Send a TPA Here request to another player
+    usage: /tpahere <player>
+  tpaccept:
+    description: Accept a received TPA request
+    usage: /tpaccept [player]
+  tpadeny:
+    description: Deny a received TPA request
+    usage: /tpadeny [player]
+  tpacancel:
+    description: Cancel a TPA request you sent
+    usage: /tpacancel [player]
+  send:
+    description: Send items to another player
+    usage: /send <player>
+  bagages:
+    description: Open your delivered items
+    usage: /bagages
+  rtp:
+    description: Random teleport
+    usage: /rtp
+  combat:
+    description: List players in combat
+    usage: /combat
+    permission: heartsmp.admin
+  inventoryrollback:
+    description: Inspect and roll back a player's death drops
+    usage: /inventoryrollback <player>
+    aliases: [irl, invrollback]
+    permission: heartsmp.admin
+  rank:
+    description: Change a player's rank
+    usage: /rank <player> <default|VIP|VIP+>
+    permission: heartsmp.admin
+
+permissions:
+  heartsmp.player:
+    description: Access to all player-facing commands
+    default: true
+    children:
+      heartsmp.tpa: true
+      heartsmp.send: true
+      heartsmp.bagages: true
+      heartsmp.rtp: true
+  heartsmp.tpa:
+    description: Use /tpa /tpahere /tpaccept /tpadeny /tpacancel
+    default: true
+  heartsmp.send:
+    description: Use /send
+    default: true
+  heartsmp.bagages:
+    description: Use /bagages
+    default: true
+  heartsmp.rtp:
+    description: Use /rtp
+    default: true
+  heartsmp.admin:
+    description: Access to admin commands
+    default: op
+  heartsmp.rtp.bypass:
+    description: Ignore RTP rank locks and cooldowns
+    default: op
