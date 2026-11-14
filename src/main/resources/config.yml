@@ -17,6 +17,8 @@ settings:
     duration-seconds: 30
     # アクションバーを更新する間隔(tick)
     actionbar-interval-ticks: 10
+    # Combat 中はエリトラ (滑空) を使用不可にする
+    block-elytra: true
   hearts:
     default: 10
     min: 1
@@ -104,6 +106,7 @@ messages:
 
   combat-actionbar: '<#00D6FF>Combat<#C6C6C6>: <#9BEFFF>%seconds%s'
   combat-logout: '<#eb4034>%player% <#C6C6C6>が Combat 中にログアウトしました。'
+  combat-elytra-blocked: '<#eb4034>Combat 中はエリトラを使用できません。'
 
   heart-lost: '<#eb4034>ハートが 1 つ減りました <#C6C6C6>(%hearts% ハート)'
   heart-gained: '<#7aff59>ハートが 1 つ増えました <#C6C6C6>(%hearts% ハート)'

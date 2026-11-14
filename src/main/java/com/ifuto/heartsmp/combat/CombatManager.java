@@ -50,6 +50,30 @@ public final class CombatManager {
         Session v = sessions.computeIfAbsent(victim.getUniqueId(), key -> new Session());
         v.expiry = expiry;
         v.opponents.add(attacker.getUniqueId());
+
+        // Combat に入った瞬間に滑空中だった場合は強制的に解除する
+        if (plugin.settings().combatBlockElytra) {
+            stopGlide(attacker, true);
+            stopGlide(victim, true);
+        }
+    }
+
+    /**
+     * Combat 中の滑空を打ち消します。
+     *
+     * @param notify 解除したときにアクションバーで通知するか
+     * @return 実際に解除した場合は true
+     */
+    public boolean stopGlide(Player player, boolean notify) {
+        if (player == null || !player.isOnline() || !player.isGliding()) {
+            return false;
+        }
+        // サーバー側の滑空状態を落とし、クライアントにも「滑空していない」状態を送る
+        player.setGliding(false);
+        if (notify) {
+            plugin.messages().actionBar(player, "combat-elytra-blocked");
+        }
+        return true;
     }
 
     public boolean inCombat(UUID uuid) {
@@ -118,6 +142,9 @@ public final class CombatManager {
             Player player = Bukkit.getPlayer(uuid);
             if (player == null || !player.isOnline()) {
                 continue;
+            }
+            if (plugin.settings().combatBlockElytra) {
+                stopGlide(player, true);
             }
             int seconds = (int) Math.ceil((session.expiry - now) / 1000.0D);
             plugin.messages().actionBar(player, "combat-actionbar", "seconds", String.valueOf(seconds));

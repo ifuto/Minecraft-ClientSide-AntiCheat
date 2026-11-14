@@ -13,6 +13,7 @@ public final class Settings {
 
     public final long combatMillis;
     public final long actionbarIntervalTicks;
+    public final boolean combatBlockElytra;
     public final int heartsDefault;
     public final int heartsMin;
     public final int heartsMax;
@@ -49,6 +50,7 @@ public final class Settings {
     public Settings(FileConfiguration config) {
         this.combatMillis = seconds(config, "settings.combat.duration-seconds", 30);
         this.actionbarIntervalTicks = Math.max(1L, config.getLong("settings.combat.actionbar-interval-ticks", 10L));
+        this.combatBlockElytra = config.getBoolean("settings.combat.block-elytra", true);
         this.heartsDefault = config.getInt("settings.hearts.default", 10);
         this.heartsMin = config.getInt("settings.hearts.min", 1);
         this.heartsMax = config.getInt("settings.hearts.max", 30);

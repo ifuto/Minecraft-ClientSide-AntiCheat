@@ -66,6 +66,11 @@ server_test: true
 
 - プレイヤー由来のダメージを **受けた／与えた双方** を 30 秒間 Combat 状態にします（設定可）
 - Combat 中はアクションバーに `<#00D6FF>Combat<#C6C6C6>: <#9BEFFF>%seconds%s`
+- **Combat 中はエリトラ（滑空）が使用不可**
+  - 滑空トグルイベントを即キャンセルし、その一瞬の滑空も打ち消します
+    （サーバー側の滑空状態を落としてクライアントへ同期し、次 tick でも再確認）
+  - 滑空中に Combat が始まった場合も即座に滑空を解除します
+  - `settings.combat.block-elytra: false` で無効化できます
 - **Combat 中にログアウト**すると
   - その場に所持アイテムを半径 4 ブロック程度に散らばせる
   - ハートの推移（相手が 1 人に絞れれば移動、絞れなければ Heart のネザースター）
@@ -180,6 +185,7 @@ server_test: true
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
 | `combat.duration-seconds` | 30 | Combat 継続時間 |
+| `combat.block-elytra` | true | Combat 中のエリトラ（滑空）禁止 |
 | `hearts.default` / `min` / `max` | 10 / 1 / 30 | ハート設定 |
 | `death.logout-scatter-radius` | 4.0 | Combat ログアウト時の散らばり半径 |
 | `damage.tnt-minecart-multiplier` | 0.8 | TNT トロッコのダメージ倍率 |
